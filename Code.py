@@ -1,54 +1,108 @@
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import classification_report, accuracy_score
-from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+from fastapi import FastAPI, File, UploadFile, HTTPException
+import face_recognition
+import pickle
+import os
 
-# Load the dataset
-file_path = "path/to/your/dataset.xlsx"
-df = pd.read_excel(file_path)
+app = FastAPI()
 
-# Clean the data
-df["CLEANED_SENTENCE"] = df["CLEANED_SENTENCE"].astype(str)
+DATASET_PATH = "/home/siddharth/Desktop/face_recg/dataset"  # Update this to your dataset path
+ENCODINGS_FILE = "encodings.pkl"
 
-def clean_text(text):
-    """Cleans the given text by stripping whitespace and converting to lowercase."""
-    return text.strip().lower()
+# Utility function to update encodings
+def update_encodings(dataset_path, encodings_file):
+    # Load existing encodings if the file exists
+    if os.path.exists(encodings_file):
+        with open(encodings_file, "rb") as file:
+            data = pickle.load(file)
+        existing_encodings = data["encodings"]
+        existing_images = set(data["images"])  # Use a set for faster lookups
+    else:
+        existing_encodings = []
+        existing_images = set()
 
-df["CLEANED_SENTENCE"] = df["CLEANED_SENTENCE"].apply(clean_text)
+    # Process new images
+    new_encodings = []
+    new_images = []
+    for filename in os.listdir(dataset_path):
+        if filename.lower().endswith(('.jpg', '.jpeg', '.png')) and filename not in existing_images:
+            image_path = os.path.join(dataset_path, filename)
+            image = face_recognition.load_image_file(image_path)
+            face_locations = face_recognition.face_locations(image)
+            if face_locations:
+                face_encoding = face_recognition.face_encodings(image, face_locations)[0]
+                new_encodings.append(face_encoding)
+                new_images.append(filename)
+            else:
+                print(f"No face found in {filename}")
 
-# Map tenses to numerical labels
-label_mapping = {"past": 0, "present": 1, "present_continuous": 2, "future": 3}
-df["label"] = df["CLEANED_SENTENCE"].apply(
-    lambda x: label_mapping[x.split("_")[-1]] if any(k in x for k in label_mapping) else np.nan
-)
-df.dropna(subset=["label"], inplace=True)
+    # Append new data to the existing data
+    updated_encodings = existing_encodings + new_encodings
+    updated_images = list(existing_images) + new_images
 
-# Split data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(
-    df["CLEANED_SENTENCE"], df["label"], test_size=0.2, random_state=42
-)
+    # Save updated encodings back to the file
+    with open(encodings_file, "wb") as file:
+        pickle.dump({"encodings": updated_encodings, "images": updated_images}, file)
 
-# Tokenize sentences and pad sequences
-tokenizer = Tokenizer()
-tokenizer.fit_on_texts(X_train)
-X_train_seq = tokenizer.texts_to_sequences(X_train)
-X_test_seq = tokenizer.texts_to_sequences(X_test)
+    return len(new_images), len(existing_images)
 
-max_len = max(len(seq) for seq in X_train_seq)
-X_train_padded = pad_sequences(X_train_seq, maxlen=max_len, padding="post")
-X_test_padded = pad_sequences(X_test_seq, maxlen=max_len, padding="post")
+# Endpoint to generate/update encodings
+@app.post("/generate-or-update-encodings")
+async def generate_or_update_encodings_endpoint():
+    new_count, existing_count = update_encodings(DATASET_PATH, ENCODINGS_FILE)
+    return {
+        "message": "Encodings updated successfully!",
+        "new_images_processed": new_count,
+        "total_images_in_dataset": new_count + existing_count
+    }
 
-# Train a Gradient Boosting Classifier
-clf = GradientBoostingClassifier(n_estimators=200, max_depth=5, random_state=42)
-clf.fit(X_train_padded, y_train)
+# Endpoint to upload and match
+@app.post("/upload-and-match")
+async def upload_and_match(file: UploadFile = File(...)):
+    if not os.path.exists(ENCODINGS_FILE):
+        raise HTTPException(status_code=400, detail="Encodings file not found. Generate encodings first.")
 
-# Make predictions
-y_pred = clf.predict(X_test_padded)
+    # Load precomputed encodings
+    with open(ENCODINGS_FILE, "rb") as f:
+        data = pickle.load(f)
 
-# Evaluate the model
-accuracy = accuracy_score(y_test, y_pred)
-print("Accuracy:", accuracy)
-print(classification_report(y_test, y_pred, target_names=list(label_mapping.keys())))
+    encodings = data["encodings"]
+    image_names = data["images"]
+
+    # Load user image
+    image_data = await file.read()
+    with open("temp_uploaded_image.jpg", "wb") as temp_file:
+        temp_file.write(image_data)
+    user_image = face_recognition.load_image_file("temp_uploaded_image.jpg")
+
+    user_face_locations = face_recognition.face_locations(user_image)
+    if len(user_face_locations) == 0:
+        os.remove("temp_uploaded_image.jpg")
+        raise HTTPException(status_code=400, detail="No face detected in the uploaded image.")
+
+    user_face_encoding = face_recognition.face_encodings(user_image, user_face_locations)[0]
+
+    # Compare with dataset encodings
+    distances = face_recognition.face_distance(encodings, user_face_encoding)
+    similarity_percentages = (1 - distances) * 100
+
+    os.remove("temp_uploaded_image.jpg")  # Clean up the temporary file
+
+    # Get matches above the 50% threshold
+    matches = []
+    for i, similarity in enumerate(similarity_percentages):
+        if similarity > 50:  # Match threshold set to 50%
+            matches.append({
+                "image_name": image_names[i],
+                "similarity": f"{similarity:.2f}%"
+            })
+
+    if matches:
+        return {
+            "message": "Matches found!",
+            "matches": matches
+        }
+    else:
+        return {
+            "message": "No good match found in the dataset.",
+        }
+        
