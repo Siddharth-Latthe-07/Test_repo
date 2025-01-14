@@ -19,15 +19,32 @@ data = pd.read_excel(file_path, sheet_name=sheet_name)
 
 # Assuming your dataset has a column 'CLEANED_SENTENCE'
 sentences = data['CLEANED_SENTENCE']
-labels = data['LABEL']  # Replace 'LABEL' with your column name for tense labels
 
-# Step 2: Class Distribution Analysis
-class_counts = labels.value_counts()
+# Step 2: Tokenization and TF-IDF Vectorization
+nlp = spacy.load("en_core_web_sm")
+
+def tokenize_text(text):
+    doc = nlp(text)
+    return [token.text for token in doc if not token.is_stop and not token.is_punct]
+
+vectorizer = TfidfVectorizer(tokenizer=tokenize_text)
+X = vectorizer.fit_transform(sentences)
+
+# Step 3: Clustering to Assign Initial Labels
+n_clusters = 4  # Number of tenses: Present, Past, Future, Present Continuous
+kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+labels = kmeans.fit_predict(X)
+tense_labels = ["Present", "Past", "Future", "Present Continuous"]
+
+# Add labels to the dataset
+data['LABEL'] = labels
+
+# Step 4: Class Distribution Analysis
+class_counts = data['LABEL'].value_counts()
 print("Class distribution before augmentation:")
 print(class_counts)
 
-# Step 3: Augmentation for Underrepresented Classes
-tense_labels = ["Present", "Past", "Future", "Present Continuous"]
+# Step 5: Augmentation for Underrepresented Classes
 max_count = class_counts.max()
 
 # Initialize a paraphrasing pipeline
@@ -54,30 +71,23 @@ for label, count in class_counts.items():
         augment_df = pd.DataFrame({'sentence': augmented_sentences, 'label': label})
         augmented_data = pd.concat([augmented_data, augment_df], ignore_index=True)
 
-# Step 4: Shuffle and Verify Class Distribution
+# Step 6: Shuffle and Verify Class Distribution
 augmented_data = augmented_data.sample(frac=1, random_state=42).reset_index(drop=True)
 new_class_counts = augmented_data['label'].value_counts()
 print("Class distribution after augmentation:")
 print(new_class_counts)
 
-# Step 5: Tokenization and TF-IDF Vectorization
-nlp = spacy.load("en_core_web_sm")
-
-def tokenize_text(text):
-    doc = nlp(text)
-    return [token.text for token in doc if not token.is_stop and not token.is_punct]
-
-vectorizer = TfidfVectorizer(tokenizer=tokenize_text)
+# Step 7: Tokenization and TF-IDF Vectorization
 X = vectorizer.fit_transform(augmented_data['sentence'])
 y = augmented_data['label']
 
-# Step 6: Train-Test Split
+# Step 8: Train-Test Split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Step 7: Model Selection (Random Forest)
+# Step 9: Model Selection (Random Forest)
 model = RandomForestClassifier(random_state=42)
 
-# Step 8: Hyperparameter Tuning using GridSearchCV
+# Step 10: Hyperparameter Tuning using GridSearchCV
 param_grid = {
     'n_estimators': [100, 200],
     'max_depth': [None, 10, 20],
@@ -89,13 +99,13 @@ param_grid = {
 grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, scoring='accuracy', n_jobs=-1, verbose=2)
 grid_search.fit(X_train, y_train)
 
-# Step 9: Best Model and Cross-validation
+# Step 11: Best Model and Cross-validation
 best_model = grid_search.best_estimator_
 cross_val_scores = cross_val_score(best_model, X_train, y_train, cv=5, scoring='accuracy')
 print(f"\nCross-validation scores: {cross_val_scores}")
 print(f"Mean CV accuracy: {cross_val_scores.mean()}")
 
-# Step 10: Model Evaluation
+# Step 12: Model Evaluation
 y_pred = best_model.predict(X_test)
 
 print("\nClassification Report:")
@@ -112,7 +122,7 @@ plt.ylabel('True')
 plt.title('Confusion Matrix')
 plt.show()
 
-# Step 11: Save the Best Model and Vectorizer
+# Step 13: Save the Best Model and Vectorizer
 joblib.dump(best_model, "best_tense_classifier_rf_model.pkl")
 joblib.dump(vectorizer, "best_vectorizer_rf_model.pkl")
 print("\nBest Model and Vectorizer Saved.")
