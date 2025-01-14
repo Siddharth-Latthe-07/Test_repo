@@ -1,24 +1,24 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 import face_recognition
-import pickle
 import os
+import faiss
+import numpy as np
 
 app = FastAPI()
 
 DATASET_PATH = "/home/siddharth/Desktop/face_recg/dataset"  # Update this to your dataset path
-ENCODINGS_FILE = "encodings.pkl"
+INDEX_FILE = "faiss_index.bin"
+IMAGES_FILE = "image_names.npy"
 
-# Utility function to update encodings
-def update_encodings(dataset_path, encodings_file):
-    # Load existing encodings if the file exists
-    if os.path.exists(encodings_file):
-        with open(encodings_file, "rb") as file:
-            data = pickle.load(file)
-        existing_encodings = data["encodings"]
-        existing_images = set(data["images"])  # Use a set for faster lookups
+# Utility function to create or update the FAISS index
+def update_faiss_index(dataset_path, index_file, images_file):
+    # Initialize or load FAISS index
+    if os.path.exists(index_file) and os.path.exists(images_file):
+        index = faiss.read_index(index_file)
+        existing_images = np.load(images_file).tolist()
     else:
-        existing_encodings = []
-        existing_images = set()
+        index = faiss.IndexFlatL2(128)  # 128-dimensional encodings
+        existing_images = []
 
     # Process new images
     new_encodings = []
@@ -35,20 +35,23 @@ def update_encodings(dataset_path, encodings_file):
             else:
                 print(f"No face found in {filename}")
 
-    # Append new data to the existing data
-    updated_encodings = existing_encodings + new_encodings
-    updated_images = list(existing_images) + new_images
+    # Add new encodings to the FAISS index
+    if new_encodings:
+        index.add(np.array(new_encodings, dtype=np.float32))
 
-    # Save updated encodings back to the file
-    with open(encodings_file, "wb") as file:
-        pickle.dump({"encodings": updated_encodings, "images": updated_images}, file)
+    # Update image names
+    updated_images = existing_images + new_images
+
+    # Save updated FAISS index and image names
+    faiss.write_index(index, index_file)
+    np.save(images_file, np.array(updated_images))
 
     return len(new_images), len(existing_images)
 
 # Endpoint to generate/update encodings
-@app.post("/generate-or-update-encodings")
+@app.post("/generate-encodings")
 async def generate_or_update_encodings_endpoint():
-    new_count, existing_count = update_encodings(DATASET_PATH, ENCODINGS_FILE)
+    new_count, existing_count = update_faiss_index(DATASET_PATH, INDEX_FILE, IMAGES_FILE)
     return {
         "message": "Encodings updated successfully!",
         "new_images_processed": new_count,
@@ -58,15 +61,12 @@ async def generate_or_update_encodings_endpoint():
 # Endpoint to upload and match
 @app.post("/upload-and-match")
 async def upload_and_match(file: UploadFile = File(...)):
-    if not os.path.exists(ENCODINGS_FILE):
-        raise HTTPException(status_code=400, detail="Encodings file not found. Generate encodings first.")
+    if not os.path.exists(INDEX_FILE) or not os.path.exists(IMAGES_FILE):
+        raise HTTPException(status_code=400, detail="FAISS index or image names file not found. Generate encodings first.")
 
-    # Load precomputed encodings
-    with open(ENCODINGS_FILE, "rb") as f:
-        data = pickle.load(f)
-
-    encodings = data["encodings"]
-    image_names = data["images"]
+    # Load FAISS index and image names
+    index = faiss.read_index(INDEX_FILE)
+    image_names = np.load(IMAGES_FILE).tolist()
 
     # Load user image
     image_data = await file.read()
@@ -81,18 +81,18 @@ async def upload_and_match(file: UploadFile = File(...)):
 
     user_face_encoding = face_recognition.face_encodings(user_image, user_face_locations)[0]
 
-    # Compare with dataset encodings
-    distances = face_recognition.face_distance(encodings, user_face_encoding)
-    similarity_percentages = (1 - distances) * 100
+    # Perform a search on the FAISS index
+    user_face_encoding = np.array([user_face_encoding], dtype=np.float32)
+    distances, indices = index.search(user_face_encoding, k=5)  # Find top-5 matches
 
     os.remove("temp_uploaded_image.jpg")  # Clean up the temporary file
 
-    # Get matches above the 50% threshold
     matches = []
-    for i, similarity in enumerate(similarity_percentages):
-        if similarity > 50:  # Match threshold set to 50%
+    for i, distance in enumerate(distances[0]):
+        if distance < 0.6:  # Match threshold based on L2 distance
+            similarity = (1 - distance) * 100  # Convert to percentage
             matches.append({
-                "image_name": image_names[i],
+                "image_name": image_names[indices[0][i]],
                 "similarity": f"{similarity:.2f}%"
             })
 
