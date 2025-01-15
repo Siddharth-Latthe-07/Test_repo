@@ -1,4 +1,3 @@
-from transformers import pipeline
 import pandas as pd
 import numpy as np
 import spacy
@@ -21,17 +20,18 @@ data = pd.read_excel(file_path, sheet_name=sheet_name)
 # Assuming your dataset has a column 'CLEANED_SENTENCE'
 sentences = data['CLEANED_SENTENCE']
 
-# Tokenization and TF-IDF Vectorization
+# Initialize Spacy and TF-IDF Vectorizer
 nlp = spacy.load("en_core_web_sm")
 
+# Define a function for tokenizing text
 def tokenize_text(text):
     doc = nlp(text)
     return [token.text for token in doc if not token.is_stop and not token.is_punct]
 
+# Clustering to Assign Initial Labels
 vectorizer = TfidfVectorizer(tokenizer=tokenize_text)
 X = vectorizer.fit_transform(sentences)
 
-# Clustering to Assign Initial Labels
 n_clusters = 4  # Number of tenses: Present, Past, Future, Present Continuous
 kmeans = KMeans(n_clusters=n_clusters, random_state=42)
 labels = kmeans.fit_predict(X)
@@ -45,9 +45,10 @@ class_counts = data['LABEL'].value_counts()
 print("Class distribution before augmentation:")
 print(class_counts)
 
-# Initialize a paraphrasing pipeline
-paraphraser = pipeline("text2text-generation", model="t5-small", device=0)  # Adjust model/device as needed
+# Initialize augmentation
+from textattack.augmentation import WordNetAugmenter
 
+augmenter = WordNetAugmenter()
 augmented_data = pd.DataFrame({'sentence': sentences, 'label': labels})
 
 while True:
@@ -66,12 +67,11 @@ while True:
             if augment_count > 0:
                 augmented_sentences = []
                 for sentence in sentences_to_augment.sample(n=min(len(sentences_to_augment), augment_count), random_state=42):
-                    # Generate paraphrased variations
                     try:
-                        paraphrased = paraphraser(sentence, max_length=50, num_return_sequences=1)[0]['generated_text']
-                        augmented_sentences.append(paraphrased)
+                        augmented_sent = augmenter.augment(sentence)
+                        augmented_sentences.extend(augmented_sent)
                     except Exception as e:
-                        print(f"Error in paraphrasing: {e}")
+                        print(f"Error in augmentation: {e}")
                         continue
 
                 # Create new DataFrame for augmented sentences
@@ -80,19 +80,11 @@ while True:
 
 # Data Cleaning Function
 def clean_text(text):
-    """
-    Cleans the given text by removing unwanted characters, extra spaces, 
-    and converting to lowercase.
-    """
-    # Remove special characters and digits
     text = re.sub(r"[^a-zA-Z\s]", "", text)
-    # Convert to lowercase
     text = text.lower()
-    # Remove extra spaces
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
-# Perform Data Cleaning after Augmentation
 print("\nPerforming data cleaning on augmented dataset...")
 augmented_data['sentence'] = augmented_data['sentence'].apply(clean_text)
 
@@ -148,32 +140,23 @@ plt.title('Confusion Matrix')
 plt.show()
 
 # Save the Best Model and Vectorizer
-joblib.dump(best_model, "best_tense_classifier_rf_model.pkl")
-joblib.dump(vectorizer, "best_vectorizer_rf_model.pkl")
+joblib.dump(best_model, "optimized_tense_classifier_rf_model.pkl")
+joblib.dump(vectorizer, "optimized_vectorizer_rf_model.pkl")
 print("\nBest Model and Vectorizer Saved.")
 
 # ------------ USER INPUT PREDICTION ------------
 
 def predict_tense(user_input):
-    # Preprocess the user input
     doc = nlp(user_input)
     preprocessed_input = " ".join([token.lemma_ for token in doc if not token.is_stop and not token.is_punct])
-    
-    # Vectorize the preprocessed sentence
     X_new = vectorizer.transform([preprocessed_input])
-    
-    # Predict the tense
     prediction = best_model.predict(X_new)
     predicted_tense = tense_labels[prediction[0]]
-    
-    # Display the result
     print(f"User Input: {user_input}")
     print(f"Predicted Tense: {predicted_tense}\n")
 
-# Get user input and predict tense
 while True:
     user_input = input("Enter a sentence (or type 'exit' to quit): ")
     if user_input.lower() == "exit":
         break
     predict_tense(user_input)
-    
