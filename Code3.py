@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import cross_val_score
 import joblib
+import re
 
 # Load Dataset
 file_path = "your_dataset.xlsx"  # Replace with your file path
@@ -77,10 +78,28 @@ while True:
                 augment_df = pd.DataFrame({'sentence': augmented_sentences, 'label': label})
                 augmented_data = pd.concat([augmented_data, augment_df], ignore_index=True)
 
+# Data Cleaning Function
+def clean_text(text):
+    """
+    Cleans the given text by removing unwanted characters, extra spaces, 
+    and converting to lowercase.
+    """
+    # Remove special characters and digits
+    text = re.sub(r"[^a-zA-Z\s]", "", text)
+    # Convert to lowercase
+    text = text.lower()
+    # Remove extra spaces
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+# Perform Data Cleaning after Augmentation
+print("\nPerforming data cleaning on augmented dataset...")
+augmented_data['sentence'] = augmented_data['sentence'].apply(clean_text)
+
 # Shuffle and Verify Class Distribution
 augmented_data = augmented_data.sample(frac=1, random_state=42).reset_index(drop=True)
 new_class_counts = augmented_data['label'].value_counts()
-print("Class distribution after augmentation:")
+print("Class distribution after cleaning and augmentation:")
 print(new_class_counts)
 
 # Tokenization and TF-IDF Vectorization
