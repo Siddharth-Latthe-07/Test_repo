@@ -39,13 +39,10 @@ tense_labels = ["Present", "Past", "Future", "Present Continuous"]
 # Add labels to the dataset
 data['LABEL'] = labels
 
-# Class Distribution Analysis
+# Augmentation for Underrepresented Classes
 class_counts = data['LABEL'].value_counts()
 print("Class distribution before augmentation:")
 print(class_counts)
-
-# Augmentation for Underrepresented Classes
-max_count = class_counts.max()
 
 # Initialize a paraphrasing pipeline
 paraphraser = pipeline("text2text-generation", model="t5-small", device=0)  # Adjust model/device as needed
@@ -135,3 +132,29 @@ plt.show()
 joblib.dump(best_model, "best_tense_classifier_rf_model.pkl")
 joblib.dump(vectorizer, "best_vectorizer_rf_model.pkl")
 print("\nBest Model and Vectorizer Saved.")
+
+# ------------ USER INPUT PREDICTION ------------
+
+def predict_tense(user_input):
+    # Preprocess the user input
+    doc = nlp(user_input)
+    preprocessed_input = " ".join([token.lemma_ for token in doc if not token.is_stop and not token.is_punct])
+    
+    # Vectorize the preprocessed sentence
+    X_new = vectorizer.transform([preprocessed_input])
+    
+    # Predict the tense
+    prediction = best_model.predict(X_new)
+    predicted_tense = tense_labels[prediction[0]]
+    
+    # Display the result
+    print(f"User Input: {user_input}")
+    print(f"Predicted Tense: {predicted_tense}\n")
+
+# Get user input and predict tense
+while True:
+    user_input = input("Enter a sentence (or type 'exit' to quit): ")
+    if user_input.lower() == "exit":
+        break
+    predict_tense(user_input)
+    
