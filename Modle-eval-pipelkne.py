@@ -1,24 +1,14 @@
-from src.components.model_eval import ModelEvaluator
-from src.entity.config_entity import ModelEvaluationConfig
-
-def run_model_evaluation(config, model, X_test, y_test):
-    model_evaluation_config = ModelEvaluationConfig(**config["model_evaluation"])
-    model_evaluator = ModelEvaluator(model_evaluation_config)
-    accuracy = model_evaluator.initiate_model_evaluation(model, X_test, y_test)
-    return accuracy
-
-
-
-
-# src/pipeline/model_eval_pipeline.py
-from src/components.model_eval import ModelEvaluation
-from src.entity.config_entity import ModelEvalConfig
+from src.components.model_eval import ModelEval
+from sklearn.model_selection import train_test_split
 
 class ModelEvalPipeline:
-    def __init__(self, config: ModelEvalConfig):
-        self.config = config
-        self.model_eval = ModelEvaluation(self.config)
+    def __init__(self, model, X, y):
+        self.model = model
+        self.X = X
+        self.y = y
 
     def run(self):
-        self.model_eval.evaluate_model()
+        X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=42)
+        model_eval = ModelEval(self.model, X_test, y_test)
+        model_eval.evaluate_model()
         
