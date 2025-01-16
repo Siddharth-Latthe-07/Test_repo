@@ -1,0 +1,12 @@
+version: 1.0
+dataset:
+  file_path: "data/augmented_data.xlsx"  # Relative path to the dataset
+  format: "xlsx"                        # Dataset format
+columns:
+  - name: sentence
+    dtype: string                       # Text data
+    description: "The sentence for classification"
+  - name: label
+    dtype: string                       # Label for classification
+    description: "The tense category of the sentence"
+    
