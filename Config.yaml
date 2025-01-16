@@ -1,0 +1,26 @@
+version: 1.0
+data_ingestion:
+  file_path: "data/augmented_data.xlsx"
+  output_dir: "artifacts/data_ingestion"
+  test_size: 0.2
+  random_state: 42
+
+data_validation:
+  schema_file_path: "src/components/schema.yaml"
+
+data_transformation:
+  vectorizer_output_path: "artifacts/data_transformation/tfidf_vectorizer.pkl"
+
+model_trainer:
+  model_output_path: "artifacts/model_trainer/tense_classifier_model.pkl"
+  model_type: "RandomForestClassifier"
+  n_estimators: 100
+  random_state: 42
+
+model_evaluation:
+  report_file_path: "artifacts/model_evaluation/classification_report.txt"
+  metrics: ["accuracy", "f1_score"]
+
+mlflow:
+  tracking_uri: "file:///mlruns"
+  experiment_name: "Tense Classification Experiment"
