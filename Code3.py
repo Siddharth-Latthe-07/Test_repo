@@ -11,6 +11,7 @@ import seaborn as sns
 from sklearn.model_selection import cross_val_score
 import joblib
 import re
+import nlpaug.augmenter.word as naw
 
 # Load Dataset
 file_path = "your_dataset.xlsx"  # Replace with your file path
@@ -45,10 +46,9 @@ class_counts = data['LABEL'].value_counts()
 print("Class distribution before augmentation:")
 print(class_counts)
 
-# Initialize augmentation
-from textattack.augmentation import WordNetAugmenter
+# Initialize NLPAug Synonym Augmenter
+augmenter = naw.SynonymAug(aug_src='wordnet')
 
-augmenter = WordNetAugmenter()
 augmented_data = pd.DataFrame({'sentence': sentences, 'label': labels})
 
 while True:
@@ -69,7 +69,7 @@ while True:
                 for sentence in sentences_to_augment.sample(n=min(len(sentences_to_augment), augment_count), random_state=42):
                     try:
                         augmented_sent = augmenter.augment(sentence)
-                        augmented_sentences.extend(augmented_sent)
+                        augmented_sentences.append(augmented_sent)
                     except Exception as e:
                         print(f"Error in augmentation: {e}")
                         continue
@@ -160,3 +160,4 @@ while True:
     if user_input.lower() == "exit":
         break
     predict_tense(user_input)
+    
