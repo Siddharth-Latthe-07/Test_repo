@@ -1,16 +1,19 @@
+from transformers import pipeline
 import pandas as pd
 import numpy as np
 import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
+from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import classification_report, confusion_matrix
-from xgboost import XGBClassifier
-import joblib
-import matplotlib.pyplot as plt
-import seaborn as sns
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
-from scipy.stats import randint
+from sklearn.pipeline import Pipeline
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib
+import re
 
 # Load Dataset
 file_path = "your_dataset.xlsx"  # Replace with your file path
@@ -71,36 +74,29 @@ print("\nClass distribution after balancing:")
 print(balanced_data['LABEL'].value_counts())
 
 # Train-Test Split
-X_train, X_test, y_train, y_test = train_test_split(X_balanced, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced)
+X_train, X_test, y_train, y_test = train_test_split(X_balanced, y_balanced, test_size=0.2, random_state=42)
 
-# Define the XGBoost model
-xgb_model = XGBClassifier(random_state=42, use_label_encoder=False, eval_metric='mlogloss')
+# Model Selection (Random Forest)
+model = RandomForestClassifier(random_state=42)
 
-# RandomizedSearchCV for hyperparameter tuning
-param_dist = {
-    'n_estimators': randint(50, 200),
-    'max_depth': randint(3, 10),
-    'learning_rate': [0.01, 0.05, 0.1, 0.2],
-    'subsample': [0.6, 0.8, 1.0],
-    'colsample_bytree': [0.6, 0.8, 1.0],
-    'min_child_weight': randint(1, 10)
+# Hyperparameter Tuning using GridSearchCV with early stopping functionality
+param_grid = {
+    'n_estimators': [100, 200],
+    'max_depth': [None, 10, 20],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
+    'max_features': ['auto', 'sqrt', 'log2']
 }
 
-# RandomizedSearchCV with Stratified K-Fold Cross Validation
-random_search = RandomizedSearchCV(xgb_model, param_distributions=param_dist, n_iter=50, cv=5, random_state=42, n_jobs=-1, verbose=2, scoring='accuracy')
-random_search.fit(X_train, y_train)
+grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, scoring='accuracy', n_jobs=-1, verbose=2)
+grid_search.fit(X_train, y_train)
 
-# Best model after RandomizedSearchCV
-best_xgb_model = random_search.best_estimator_
-
-# Train the best model
-best_xgb_model.fit(X_train, y_train)
+# Best Model and Cross-validation
+best_model = grid_search.best_estimator_
+print(f"\nBest Model: {best_model}")
 
 # Model Evaluation
-y_pred = best_xgb_model.predict(X_test)
-
-print("\nBest Parameters from RandomizedSearchCV:")
-print(random_search.best_params_)
+y_pred = best_model.predict(X_test)
 
 print("\nClassification Report:")
 print(classification_report(y_test, y_pred, target_names=tense_labels))
@@ -117,8 +113,8 @@ plt.title('Confusion Matrix')
 plt.show()
 
 # Save the Best Model and Vectorizer
-joblib.dump(best_xgb_model, "best_tense_classifier_xgb_model_randomsearch.pkl")
-joblib.dump(vectorizer, "best_vectorizer_xgb_model_randomsearch.pkl")
+joblib.dump(best_model, "best_tense_classifier_rf_model.pkl")
+joblib.dump(vectorizer, "best_vectorizer_rf_model.pkl")
 print("\nBest Model and Vectorizer Saved.")
 
 # ------------ USER INPUT PREDICTION ------------
@@ -132,7 +128,7 @@ def predict_tense(user_input):
     X_new = vectorizer.transform([preprocessed_input])
     
     # Predict the tense
-    prediction = best_xgb_model.predict(X_new)
+    prediction = best_model.predict(X_new)
     predicted_tense = tense_labels[prediction[0]]
     
     # Display the result
