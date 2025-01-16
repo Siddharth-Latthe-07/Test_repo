@@ -1,18 +1,15 @@
-import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 class DataTransformation:
-    def __init__(self, config):
-        self.vectorizer_output_path = config["data_transformation"]["vectorizer_output_path"]
+    def __init__(self, data: pd.DataFrame):
+        self.data = data
 
-    def transform_data(self, sentences):
+    def transform_data(self):
+        """Transform text data using TF-IDF vectorization."""
         vectorizer = TfidfVectorizer()
-        X = vectorizer.fit_transform(sentences)
-        joblib.dump(vectorizer, self.vectorizer_output_path)
-        return X
-
-    def run(self, train_data, test_data):
-        X_train = self.transform_data(train_data["sentence"])
-        X_test = self.transform_data(test_data["sentence"])
-        return X_train, X_test
-      
+        X = vectorizer.fit_transform(self.data['sentence'])
+        y = self.data['label']
+        
+        print("Data transformation using TF-IDF completed.")
+        return X, y, vectorizer
+        
