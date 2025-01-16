@@ -1,3 +1,4 @@
+from transformers import pipeline
 import pandas as pd
 import numpy as np
 import spacy
@@ -11,7 +12,6 @@ import seaborn as sns
 from sklearn.model_selection import cross_val_score
 import joblib
 import re
-import nlpaug.augmenter.word as naw
 
 # Load Dataset
 file_path = "your_dataset.xlsx"  # Replace with your file path
@@ -21,33 +21,12 @@ data = pd.read_excel(file_path, sheet_name=sheet_name)
 # Assuming your dataset has a column 'CLEANED_SENTENCE'
 sentences = data['CLEANED_SENTENCE']
 
-# Initialize Spacy and TF-IDF Vectorizer
-nlp = spacy.load("en_core_web_sm")
-
-# Define a function for tokenizing text
-def tokenize_text(text):
-    doc = nlp(text)
-    return [token.text for token in doc if not token.is_stop and not token.is_punct]
-
-# Clustering to Assign Initial Labels
-vectorizer = TfidfVectorizer(tokenizer=tokenize_text)
-X = vectorizer.fit_transform(sentences)
-
-n_clusters = 4  # Number of tenses: Present, Past, Future, Present Continuous
-kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-labels = kmeans.fit_predict(X)
-tense_labels = ["Present", "Past", "Future", "Present Continuous"]
-
-# Add labels to the dataset
-data['LABEL'] = labels
+# Initialize a paraphrasing pipeline
+paraphraser = pipeline("text2text-generation", model="t5-small", device=0)  # Adjust model/device as needed
 
 # Augmentation for Underrepresented Classes
-class_counts = data['LABEL'].value_counts()
-print("Class distribution before augmentation:")
-print(class_counts)
-
-# Initialize NLPAug Synonym Augmenter
-augmenter = naw.SynonymAug(aug_src='wordnet')
+labels = np.random.randint(0, 4, len(sentences))  # Temporary random labels
+data['LABEL'] = labels
 
 augmented_data = pd.DataFrame({'sentence': sentences, 'label': labels})
 
@@ -68,10 +47,10 @@ while True:
                 augmented_sentences = []
                 for sentence in sentences_to_augment.sample(n=min(len(sentences_to_augment), augment_count), random_state=42):
                     try:
-                        augmented_sent = augmenter.augment(sentence)
-                        augmented_sentences.append(augmented_sent)
+                        paraphrased = paraphraser(sentence, max_length=50, num_return_sequences=1)[0]['generated_text']
+                        augmented_sentences.append(paraphrased)
                     except Exception as e:
-                        print(f"Error in augmentation: {e}")
+                        print(f"Error in paraphrasing: {e}")
                         continue
 
                 # Create new DataFrame for augmented sentences
@@ -80,26 +59,49 @@ while True:
 
 # Data Cleaning Function
 def clean_text(text):
+    """
+    Cleans the given text by removing unwanted characters, extra spaces, 
+    and converting to lowercase.
+    """
+    # Remove special characters and digits
     text = re.sub(r"[^a-zA-Z\s]", "", text)
+    # Convert to lowercase
     text = text.lower()
+    # Remove extra spaces
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
+# Perform Data Cleaning on Augmented Data
 print("\nPerforming data cleaning on augmented dataset...")
 augmented_data['sentence'] = augmented_data['sentence'].apply(clean_text)
+
+# Tokenization and TF-IDF Vectorization
+nlp = spacy.load("en_core_web_sm")
+
+def tokenize_text(text):
+    doc = nlp(text)
+    return [token.text for token in doc if not token.is_stop and not token.is_punct]
+
+vectorizer = TfidfVectorizer(tokenizer=tokenize_text)
+X = vectorizer.fit_transform(augmented_data['sentence'])
+
+# Clustering to Assign Final Labels
+n_clusters = 4  # Number of tenses: Present, Past, Future, Present Continuous
+kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+final_labels = kmeans.fit_predict(X)
+tense_labels = ["Present", "Past", "Future", "Present Continuous"]
+
+# Assign final labels to the data
+augmented_data['label'] = final_labels
 
 # Shuffle and Verify Class Distribution
 augmented_data = augmented_data.sample(frac=1, random_state=42).reset_index(drop=True)
 new_class_counts = augmented_data['label'].value_counts()
-print("Class distribution after cleaning and augmentation:")
+print("Class distribution after augmentation and clustering:")
 print(new_class_counts)
 
-# Tokenization and TF-IDF Vectorization
-X = vectorizer.fit_transform(augmented_data['sentence'])
-y = augmented_data['label']
-
 # Train-Test Split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, final_labels, test_size=0.2, random_state=42)
 
 # Model Selection (Random Forest)
 model = RandomForestClassifier(random_state=42)
@@ -140,8 +142,8 @@ plt.title('Confusion Matrix')
 plt.show()
 
 # Save the Best Model and Vectorizer
-joblib.dump(best_model, "optimized_tense_classifier_rf_model.pkl")
-joblib.dump(vectorizer, "optimized_vectorizer_rf_model.pkl")
+joblib.dump(best_model, "best_tense_classifier_rf_model.pkl")
+joblib.dump(vectorizer, "best_vectorizer_rf_model.pkl")
 print("\nBest Model and Vectorizer Saved.")
 
 # ------------ USER INPUT PREDICTION ------------
