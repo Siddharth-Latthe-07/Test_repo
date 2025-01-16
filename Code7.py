@@ -5,7 +5,7 @@ import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import classification_report, confusion_matrix
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
@@ -76,19 +76,33 @@ print(balanced_data['LABEL'].value_counts())
 # Train-Test Split
 X_train, X_test, y_train, y_test = train_test_split(X_balanced, y_balanced, test_size=0.2, random_state=42)
 
-# Model Selection (Random Forest) with Regularization and Cross-validation
-model = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10, min_samples_split=4, min_samples_leaf=2)
+# Define the RandomForest model
+model = RandomForestClassifier(random_state=42)
 
-# Cross-validation to detect overfitting
-cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='accuracy')
-print(f"Cross-validation scores: {cv_scores}")
-print(f"Mean cross-validation score: {cv_scores.mean()}")
+# GridSearchCV for hyperparameter tuning
+param_grid = {
+    'n_estimators': [50, 100, 200],
+    'max_depth': [None, 10, 20],
+    'min_samples_split': [2, 4, 6],
+    'min_samples_leaf': [1, 2, 4],
+    'max_features': ['auto', 'sqrt', 'log2']
+}
 
-# Train the model
-model.fit(X_train, y_train)
+# Perform GridSearchCV
+grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, n_jobs=-1, verbose=2, scoring='accuracy')
+grid_search.fit(X_train, y_train)
+
+# Best model after GridSearchCV
+best_model = grid_search.best_estimator_
+
+# Train the best model
+best_model.fit(X_train, y_train)
 
 # Model Evaluation
-y_pred = model.predict(X_test)
+y_pred = best_model.predict(X_test)
+
+print("\nBest Parameters from GridSearchCV:")
+print(grid_search.best_params_)
 
 print("\nClassification Report:")
 print(classification_report(y_test, y_pred, target_names=tense_labels))
@@ -105,8 +119,8 @@ plt.title('Confusion Matrix')
 plt.show()
 
 # Save the Best Model and Vectorizer
-joblib.dump(model, "best_tense_classifier_rf_model.pkl")
-joblib.dump(vectorizer, "best_vectorizer_rf_model.pkl")
+joblib.dump(best_model, "best_tense_classifier_rf_model_gridsearch.pkl")
+joblib.dump(vectorizer, "best_vectorizer_rf_model_gridsearch.pkl")
 print("\nBest Model and Vectorizer Saved.")
 
 # ------------ USER INPUT PREDICTION ------------
@@ -120,7 +134,7 @@ def predict_tense(user_input):
     X_new = vectorizer.transform([preprocessed_input])
     
     # Predict the tense
-    prediction = model.predict(X_new)
+    prediction = best_model.predict(X_new)
     predicted_tense = tense_labels[prediction[0]]
     
     # Display the result
