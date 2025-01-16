@@ -1,31 +1,35 @@
+# Data Ingestion Configuration
 data_ingestion:
-  input_file_path: "data/augmented_data.xlsx"
-  output_train_path: "artifacts/train_data.csv"
-  output_test_path: "artifacts/test_data.csv"
-  test_size: 0.2
-  random_state: 42
+  raw_data_dir: "/path/to/raw_data"  # Directory where raw data is stored
+  file_name: "augmented_data.xlsx"  # The name of the raw data file to ingest
 
-data_validation:
-  schema_file_path: "config/schema.json"
-  required_columns:
-    - "sentence"
-    - "label"
-  target_column: "label"
-
+# Data Transformation Configuration (Optional)
 data_transformation:
-  tfidf_max_features: 5000
-  tfidf_min_df: 5
-  tfidf_max_df: 0.8
-  target_column: "label"
+  transformation_method: "TF-IDF"  # Defines the method of transformation (e.g., TF-IDF, CountVectorizer)
 
-model_trainer:
-  model_type: "RandomForestClassifier"
-  n_estimators: 100
-  random_state: 42
-  model_save_path: "artifacts/tense_classifier_model.pkl"
+# Model Training Configuration
+model_training:
+  test_size: 0.2  # Percentage of data to be used for testing (0.2 = 20%)
+  random_state: 42  # Seed for random number generation to ensure reproducibility
+  model_type: "RandomForest"  # The model type to be used for training (e.g., RandomForest, SVM)
+  n_estimators: 100  # Number of trees for RandomForest
+  max_depth: 10  # Maximum depth for RandomForest trees
 
+# Model Evaluation Configuration
 model_evaluation:
-  metric_name: "accuracy"
-  metric_threshold: 0.85
-  evaluation_report_path: "artifacts/evaluation_report.txt"
+  metrics:  # List of metrics to evaluate the model on
+    - accuracy
+    - classification_report
+  threshold: 0.5  # Threshold for binary classification (for example, in Logistic Regression)
+
+# File Paths for saving trained models and logs
+output:
+  model_save_path: "/path/to/save/models"  # Directory to save trained models
+  logs_path: "/path/to/logs"  # Directory for saving logs
+  model_file_name: "random_forest_model.pkl"  # File name for the saved model
+
+# Additional Configuration (Optional)
+additional:
+  logging_level: "INFO"  # Set logging level for the application
+  enable_logging: true  # Flag to enable or disable logging
   
