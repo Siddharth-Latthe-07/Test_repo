@@ -1,0 +1,22 @@
+version: 1.0
+data:
+  file_path: "data/augmented_data.xlsx"  # Path to the dataset
+  train_test_ratio: 0.8                 # Train-test split ratio
+  random_state: 42                      # Random state for reproducibility
+
+model:
+  type: "RandomForestClassifier"        # Model type
+  n_estimators: 100                     # Number of estimators in the Random Forest
+
+tfidf:
+  max_features: null                    # Maximum number of features for TF-IDF
+  min_df: 1                             # Minimum document frequency
+  max_df: 1.0                           # Maximum document frequency
+
+mlflow:
+  tracking_uri: "file:///mlruns"        # MLflow tracking URI
+  experiment_name: "Tense Classification Experiment"
+  model_file: "artifacts/tense_classifier_model.pkl"
+  vectorizer_file: "artifacts/tfidf_vectorizer.pkl"
+  classification_report: "artifacts/classification_report.txt"
+  
