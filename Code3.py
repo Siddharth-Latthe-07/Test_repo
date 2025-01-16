@@ -7,9 +7,11 @@ from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import classification_report, confusion_matrix
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.pipeline import Pipeline
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import cross_val_score
 import joblib
 import re
 
@@ -21,59 +23,18 @@ data = pd.read_excel(file_path, sheet_name=sheet_name)
 # Assuming your dataset has a column 'CLEANED_SENTENCE'
 sentences = data['CLEANED_SENTENCE']
 
-# Initialize a paraphrasing pipeline
-paraphraser = pipeline("text2text-generation", model="t5-small", device=0)  # Adjust model/device as needed
-
-# Augmentation for Underrepresented Classes
-labels = np.random.randint(0, 4, len(sentences))  # Temporary random labels
-data['LABEL'] = labels
-
-augmented_data = pd.DataFrame({'sentence': sentences, 'label': labels})
-
-while True:
-    class_counts = augmented_data['label'].value_counts()
-    min_count = class_counts.min()
-    majority_count = class_counts.max()
-
-    if min_count == majority_count:
-        break
-
-    for label, count in class_counts.items():
-        if count < majority_count:
-            sentences_to_augment = augmented_data[augmented_data['label'] == label]['sentence']
-            augment_count = majority_count - count
-
-            if augment_count > 0:
-                augmented_sentences = []
-                for sentence in sentences_to_augment.sample(n=min(len(sentences_to_augment), augment_count), random_state=42):
-                    try:
-                        paraphrased = paraphraser(sentence, max_length=50, num_return_sequences=1)[0]['generated_text']
-                        augmented_sentences.append(paraphrased)
-                    except Exception as e:
-                        print(f"Error in paraphrasing: {e}")
-                        continue
-
-                # Create new DataFrame for augmented sentences
-                augment_df = pd.DataFrame({'sentence': augmented_sentences, 'label': label})
-                augmented_data = pd.concat([augmented_data, augment_df], ignore_index=True)
-
 # Data Cleaning Function
 def clean_text(text):
     """
-    Cleans the given text by removing unwanted characters, extra spaces, 
+    Cleans the given text by removing unwanted characters, extra spaces,
     and converting to lowercase.
     """
-    # Remove special characters and digits
-    text = re.sub(r"[^a-zA-Z\s]", "", text)
-    # Convert to lowercase
-    text = text.lower()
-    # Remove extra spaces
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"[^a-zA-Z\s]", "", text)  # Remove special characters
+    text = text.lower()  # Convert to lowercase
+    text = re.sub(r"\s+", " ", text).strip()  # Remove extra spaces
     return text
 
-# Perform Data Cleaning on Augmented Data
-print("\nPerforming data cleaning on augmented dataset...")
-augmented_data['sentence'] = augmented_data['sentence'].apply(clean_text)
+data['CLEANED_SENTENCE'] = data['CLEANED_SENTENCE'].apply(clean_text)
 
 # Tokenization and TF-IDF Vectorization
 nlp = spacy.load("en_core_web_sm")
@@ -83,25 +44,37 @@ def tokenize_text(text):
     return [token.text for token in doc if not token.is_stop and not token.is_punct]
 
 vectorizer = TfidfVectorizer(tokenizer=tokenize_text)
-X = vectorizer.fit_transform(augmented_data['sentence'])
+X = vectorizer.fit_transform(sentences)
 
-# Clustering to Assign Final Labels
+# Clustering to Assign Initial Labels
 n_clusters = 4  # Number of tenses: Present, Past, Future, Present Continuous
 kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-final_labels = kmeans.fit_predict(X)
+labels = kmeans.fit_predict(X)
 tense_labels = ["Present", "Past", "Future", "Present Continuous"]
 
-# Assign final labels to the data
-augmented_data['label'] = final_labels
+# Add labels to the dataset
+data['LABEL'] = labels
 
-# Shuffle and Verify Class Distribution
-augmented_data = augmented_data.sample(frac=1, random_state=42).reset_index(drop=True)
-new_class_counts = augmented_data['label'].value_counts()
-print("Class distribution after augmentation and clustering:")
-print(new_class_counts)
+# Balancing Dataset
+class_counts = data['LABEL'].value_counts()
+print("\nClass distribution before balancing:")
+print(class_counts)
+
+# Over-sampling and Under-sampling
+smote = SMOTE(sampling_strategy='not majority', random_state=42)
+under_sampler = RandomUnderSampler(sampling_strategy='majority', random_state=42)
+
+X_balanced, y_balanced = smote.fit_resample(X, data['LABEL'])
+X_balanced, y_balanced = under_sampler.fit_resample(X_balanced, y_balanced)
+
+balanced_data = pd.DataFrame(X_balanced.toarray(), columns=vectorizer.get_feature_names_out())
+balanced_data['LABEL'] = y_balanced
+
+print("\nClass distribution after balancing:")
+print(balanced_data['LABEL'].value_counts())
 
 # Train-Test Split
-X_train, X_test, y_train, y_test = train_test_split(X, final_labels, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X_balanced, y_balanced, test_size=0.2, random_state=42)
 
 # Model Selection (Random Forest)
 model = RandomForestClassifier(random_state=42)
@@ -120,9 +93,7 @@ grid_search.fit(X_train, y_train)
 
 # Best Model and Cross-validation
 best_model = grid_search.best_estimator_
-cross_val_scores = cross_val_score(best_model, X_train, y_train, cv=5, scoring='accuracy')
-print(f"\nCross-validation scores: {cross_val_scores}")
-print(f"Mean CV accuracy: {cross_val_scores.mean()}")
+print(f"\nBest Model: {best_model}")
 
 # Model Evaluation
 y_pred = best_model.predict(X_test)
@@ -149,14 +120,22 @@ print("\nBest Model and Vectorizer Saved.")
 # ------------ USER INPUT PREDICTION ------------
 
 def predict_tense(user_input):
+    # Preprocess the user input
     doc = nlp(user_input)
     preprocessed_input = " ".join([token.lemma_ for token in doc if not token.is_stop and not token.is_punct])
+    
+    # Vectorize the preprocessed sentence
     X_new = vectorizer.transform([preprocessed_input])
+    
+    # Predict the tense
     prediction = best_model.predict(X_new)
     predicted_tense = tense_labels[prediction[0]]
+    
+    # Display the result
     print(f"User Input: {user_input}")
     print(f"Predicted Tense: {predicted_tense}\n")
 
+# Get user input and predict tense
 while True:
     user_input = input("Enter a sentence (or type 'exit' to quit): ")
     if user_input.lower() == "exit":
