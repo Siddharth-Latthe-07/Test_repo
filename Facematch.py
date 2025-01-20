@@ -15,10 +15,10 @@ index = None
 
 if os.path.exists(FAISS_INDEX_FILE):
     index = faiss.read_index(FAISS_INDEX_FILE)
-    id_map = faiss.IDMap(index)  # IDMap for storing image IDs
+    id_map = faiss.IndexIDMap(index)  # IDMap for storing image IDs
 else:
     flat_index = faiss.IndexFlatL2(D)  # L2 distance-based FAISS index
-    id_map = faiss.IDMap(flat_index)
+    id_map = faiss.IndexIDMap(flat_index)
 
 # Endpoint to generate and store encodings
 @app.post("/generate-encoding", status_code=201)
