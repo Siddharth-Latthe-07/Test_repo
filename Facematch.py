@@ -87,7 +87,4 @@ def search(file: UploadFile = File(...)):
     else:
         raise HTTPException(status_code=404, detail="No matches found.")
 
-# Health check endpoint (optional)
-@app.get("/", status_code=200)
-def health_check():
-    return {"message": "API is running successfully!"}
+
