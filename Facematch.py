@@ -78,8 +78,8 @@ def search(file: UploadFile = File(...)):
     for i, distance in enumerate(distances[0]):
         if distance < 0.6:  # Set a threshold for matching
             matches.append({
-                "image_id": str(indices[0][i]),
-                "distance": distance,
+                "image_id": str(indices[0][i])
+                #"distance": distance,
             })
 
     if matches:
