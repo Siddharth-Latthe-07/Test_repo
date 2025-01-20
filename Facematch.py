@@ -43,7 +43,7 @@ def generate_encoding(file: UploadFile = File(...), image_id: str = ""):
     os.remove("temp_image.jpg")
 
     # Add encoding and image ID to the FAISS index
-    id_map.add_with_ids(np.array([face_encoding], dtype="float32"), np.array([int(image_id)], dtype="int64"))
+    id_map.add_with_ids(np.array(face_encoding, dtype="float32"), np.array([int(image_id)], dtype="int64"))
 
     # Save updated FAISS index
     faiss.write_index(id_map.index, FAISS_INDEX_FILE)
@@ -73,7 +73,7 @@ def search(file: UploadFile = File(...)):
     os.remove("temp_image.jpg")
 
     # Search FAISS index
-    distances, indices = id_map.search(np.array([face_encoding], dtype="float32"), k=5)  # Top 5 matches
+    distances, indices = id_map.search(np.array(face_encoding, dtype="float32"), k=5)  # Top 5 matches
     matches = []
     for i, distance in enumerate(distances[0]):
         if distance < 0.6:  # Set a threshold for matching
