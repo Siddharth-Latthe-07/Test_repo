@@ -97,3 +97,8 @@ curl -X POST "http://127.0.0.1:8000/generate-encoding" \
 curl -X POST "http://127.0.0.1:8000/generate-encoding?image_id=123" \
 -F "file=@path/to/image.jpg"
 
+
+curl -X POST "http://127.0.0.1:8000/search" \
+-F "file=@path/to/query_image.jpg"
+
+
