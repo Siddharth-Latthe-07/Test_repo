@@ -14,13 +14,13 @@ D = 128
 
 # Initialize FAISS index
 if os.path.exists(FAISS_INDEX_FILE):
-    # Load existing index if it exists
+    # Load existing index
     index = faiss.read_index(FAISS_INDEX_FILE)
-    id_map = faiss.IndexIDMap(index)
+    id_map = faiss.IndexIDMap2(index)  # Use IndexIDMap2 for loaded indices
 else:
-    # Create a new index if it doesn't exist
+    # Create a new index
     flat_index = faiss.IndexFlatL2(D)
-    id_map = faiss.IndexIDMap(flat_index)
+    id_map = faiss.IndexIDMap(flat_index)  # Wrap new (empty) index in IDMap
 
 # Utility function to process and encode an image
 def process_image(image_path: str, image_id: int):
