@@ -14,32 +14,31 @@ D = 128
 
 # Initialize FAISS index
 if os.path.exists(FAISS_INDEX_FILE):
-    # Load existing index
+    print("Loading existing FAISS index...")
     index = faiss.read_index(FAISS_INDEX_FILE)
-    id_map = faiss.IndexIDMap2(index)  # Use IndexIDMap2 for loaded indices
+    id_map = faiss.IndexIDMap2(index)  # Wrap with IndexIDMap2
 else:
-    # Create a new index
+    print("Creating new FAISS index...")
     flat_index = faiss.IndexFlatL2(D)
-    id_map = faiss.IndexIDMap(flat_index)  # Wrap new (empty) index in IDMap
+    id_map = faiss.IndexIDMap(flat_index)
 
-# Utility function to process and encode an image
-def process_image(image_path: str, image_id: int):
+# Utility function to generate a face encoding from an image
+def generate_face_encoding(image_path: str):
     image = face_recognition.load_image_file(image_path)
     face_locations = face_recognition.face_locations(image)
-    
+
     if not face_locations:
         raise ValueError(f"No face detected in image: {image_path}")
 
     face_encoding = face_recognition.face_encodings(image, face_locations)[0]
     return face_encoding
 
-# Endpoint to generate and store encodings for images in a folder
+# Endpoint to generate encodings for a folder
 @app.post("/generate-encodings-folder", status_code=201)
 def generate_encodings_folder(folder_path: str):
     if not os.path.exists(folder_path):
         raise HTTPException(status_code=400, detail="Folder path does not exist.")
 
-    # Get all image files in the folder
     image_files = [f for f in os.listdir(folder_path) if f.endswith(('.jpg', '.jpeg', '.png'))]
 
     if not image_files:
@@ -48,20 +47,20 @@ def generate_encodings_folder(folder_path: str):
     added_images = 0
     for image_file in image_files:
         image_path = os.path.join(folder_path, image_file)
-        image_id = hash(image_path) % (10**8)  # Generate a unique ID for the image
+        image_id = hash(image_path) % (10**8)  # Generate unique ID for the image
 
         # Skip already encoded images
         if id_map.is_trained and image_id in id_map.id_map:
             continue
 
         try:
-            encoding = process_image(image_path, image_id)
+            encoding = generate_face_encoding(image_path)
             id_map.add_with_ids(np.array([encoding], dtype="float32"), np.array([image_id], dtype="int64"))
             added_images += 1
         except ValueError as e:
             print(f"Skipping {image_path}: {e}")
 
-    # Save the updated FAISS index
+    # Save updated FAISS index
     faiss.write_index(id_map.index, FAISS_INDEX_FILE)
 
     return {"message": f"Encodings generated successfully for {added_images} new images."}
@@ -78,8 +77,7 @@ def generate_encoding(file: UploadFile = File(...), image_id: str = ""):
         temp_file.write(image_data)
 
     try:
-        # Generate encoding
-        encoding = process_image("temp_image.jpg", int(image_id))
+        encoding = generate_face_encoding("temp_image.jpg")
         id_map.add_with_ids(np.array([encoding], dtype="float32"), np.array([int(image_id)], dtype="int64"))
     except ValueError as e:
         os.remove("temp_image.jpg")
@@ -104,8 +102,7 @@ def search(file: UploadFile = File(...)):
         temp_file.write(image_data)
 
     try:
-        # Generate encoding
-        encoding = process_image("temp_image.jpg", image_id=None)
+        encoding = generate_face_encoding("temp_image.jpg")
     except ValueError as e:
         os.remove("temp_image.jpg")
         raise HTTPException(status_code=400, detail=str(e))
