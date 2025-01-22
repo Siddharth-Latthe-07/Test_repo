@@ -106,18 +106,31 @@ FAISS_INDEX_FILE = "encodings_with_ids.index"
 # Load the FAISS index
 if os.path.exists(FAISS_INDEX_FILE):
     try:
-        index = faiss.read_index(FAISS_INDEX_FILE)
-        id_map = faiss.IndexIDMap(index)  # Load the IDMap
-        num_images = index.ntotal
+        # First, try reading the base index (FlatL2 or your type of index)
+        base_index = faiss.read_index(FAISS_INDEX_FILE)
+
+        # Check if it's wrapped in an ID map, or create the ID map if not
+        if isinstance(base_index, faiss.IndexIDMap):
+            # The index is already wrapped in an ID map
+            id_map = base_index
+        else:
+            # Create an ID map for a base index
+            id_map = faiss.IndexIDMap(base_index)
+
+        # Number of encodings
+        num_images = base_index.ntotal
         print(f"Number of encoded images: {num_images}")
 
         # Iterate over all the IDs and fetch the corresponding encodings
         for i in range(num_images):
-            encoding = id_map.reconstruct(i)  # Fetch encoding by ID
-            print(f"Encoding for Image ID {i}: {encoding}")
+            try:
+                encoding = id_map.reconstruct(i)  # Fetch encoding by ID
+                print(f"Encoding for Image ID {i}: {encoding}")
+            except Exception as e:
+                print(f"Error reconstructing encoding for Image ID {i}: {e}")
+
     except Exception as e:
         print(f"Error reading FAISS index: {e}")
 else:
     print("FAISS index file not found.")
     
-
