@@ -93,3 +93,31 @@ def search(file: UploadFile = File(...)):
         return {"message": "Matches found!", "matches": matches}
     else:
         raise HTTPException(status_code=404, detail="No matches found.")
+
+
+
+
+import faiss
+import os
+import numpy as np
+
+FAISS_INDEX_FILE = "encodings_with_ids.index"
+
+# Load the FAISS index
+if os.path.exists(FAISS_INDEX_FILE):
+    try:
+        index = faiss.read_index(FAISS_INDEX_FILE)
+        id_map = faiss.IndexIDMap(index)  # Load the IDMap
+        num_images = index.ntotal
+        print(f"Number of encoded images: {num_images}")
+
+        # Iterate over all the IDs and fetch the corresponding encodings
+        for i in range(num_images):
+            encoding = id_map.reconstruct(i)  # Fetch encoding by ID
+            print(f"Encoding for Image ID {i}: {encoding}")
+    except Exception as e:
+        print(f"Error reading FAISS index: {e}")
+else:
+    print("FAISS index file not found.")
+    
+
