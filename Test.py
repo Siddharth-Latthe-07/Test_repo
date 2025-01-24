@@ -553,3 +553,71 @@ for cluster_num in range(n_clusters):
         if label == cluster_num:
             print(f" - {sentences[i]}")
             
+
+
+
+
+
+
+
+import pandas as pd
+import spacy
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import silhouette_score
+
+# Step 1: Load the spacy model
+nlp = spacy.load("en_core_web_md")
+
+# Step 2: Load your dataset
+df = pd.read_excel('your_dataset.xlsx')
+
+# Step 3: Process the sentences to obtain embeddings
+sentences = df['CLEANED SENTENCE'].tolist()
+
+# Step 4: Get sentence embeddings by averaging word vectors
+def get_sentence_embedding(sentence, nlp_model):
+    doc = nlp_model(sentence)
+    # Take the average of word vectors (ignoring words without vectors)
+    word_vectors = [token.vector for token in doc if token.has_vector]
+    if word_vectors:
+        return np.mean(word_vectors, axis=0)  # Average of word vectors
+    else:
+        return np.zeros(nlp_model.vector_size)  # If no valid word vectors, return zero vector
+
+sentence_embeddings = [get_sentence_embedding(sentence, nlp) for sentence in sentences]
+
+# Step 5: Clustering the sentence embeddings using KMeans
+kmeans = KMeans(n_clusters=4, random_state=42)
+kmeans.fit(sentence_embeddings)
+
+# Get the predicted clusters for each sentence
+df['Cluster'] = kmeans.labels_
+
+# Step 6: Visualizing the clusters (Optional, using PCA for dimensionality reduction)
+pca = PCA(n_components=2)
+reduced_embeddings = pca.fit_transform(sentence_embeddings)
+
+plt.scatter(reduced_embeddings[:, 0], reduced_embeddings[:, 1], c=kmeans.labels_, cmap='viridis')
+plt.title("Clustered Sentences based on Tense")
+plt.show()
+
+# Step 7: Evaluate the clustering performance (Silhouette score)
+silhouette_avg = silhouette_score(sentence_embeddings, kmeans.labels_)
+print("Silhouette Score:", silhouette_avg)
+
+# Step 8: Analyze and label clusters based on tense (manual or semi-automatic)
+# Example of viewing sentences in each cluster
+for cluster_num in range(4):
+    print(f"\nCluster {cluster_num} sentences:")
+    cluster_sentences = df[df['Cluster'] == cluster_num]['CLEANED SENTENCE']
+    for sentence in cluster_sentences:
+        print(sentence)
+
+# Step 9: Save the output to Excel
+output_file = 'clustered_sentences_spacy.xlsx'
+df.to_excel(output_file, index=False)
+
+print(f"Clustered sentences saved to {output_file}")
