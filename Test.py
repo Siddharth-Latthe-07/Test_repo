@@ -480,3 +480,76 @@ for i in range(3):  # Assuming 3 clusters
             print(f"- {sentence}")
             
             
+
+
+
+
+
+
+
+import gensim
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, davies_bouldin_score
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+
+# Load Word2Vec model
+word2vec_model = gensim.models.KeyedVectors.load('path_to_your_model/word2vec-google-news-300.model')
+
+# Function to generate sentence embeddings by averaging word embeddings
+def get_sentence_embedding(sentence, model):
+    words = sentence.split()  # Simple tokenization, adjust if needed
+    word_embeddings = []
+    for word in words:
+        if word in model:
+            word_embeddings.append(model[word])
+    if word_embeddings:
+        sentence_embedding = np.mean(word_embeddings, axis=0)  # Mean of word vectors
+        return sentence_embedding
+    else:
+        return np.zeros(model.vector_size)  # Return a zero vector if no word is in the model
+
+# Sample sentences (for testing purposes)
+sentences = [
+    "She walks to the park.",
+    "She walked to the park.",
+    "She will walk to the park.",
+    "They are running in the field.",
+    "They were running in the field.",
+    "They will be running in the field."
+]
+
+# Generate embeddings for each sentence
+sentence_embeddings = []
+for sentence in sentences:
+    sentence_embeddings.append(get_sentence_embedding(sentence, word2vec_model))
+
+# Convert to numpy array for clustering
+sentence_embeddings = np.array(sentence_embeddings)
+
+# Standardize the embeddings (optional, but can help with clustering)
+scaler = StandardScaler()
+sentence_embeddings_scaled = scaler.fit_transform(sentence_embeddings)
+
+# Apply KMeans clustering
+n_clusters = 3  # Number of tenses (past, present, future)
+kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+kmeans.fit(sentence_embeddings_scaled)
+
+# Predict the clusters
+clusters = kmeans.predict(sentence_embeddings_scaled)
+
+# Evaluate clustering
+sil_score = silhouette_score(sentence_embeddings_scaled, clusters)
+davies_bouldin = davies_bouldin_score(sentence_embeddings_scaled, clusters)
+
+print(f"Silhouette Score: {sil_score}")
+print(f"Davies-Bouldin Score: {davies_bouldin}")
+
+# Print cluster labels and their respective sentences
+for cluster_num in range(n_clusters):
+    print(f"\nCluster {cluster_num}:")
+    for i, label in enumerate(clusters):
+        if label == cluster_num:
+            print(f" - {sentences[i]}")
+            
