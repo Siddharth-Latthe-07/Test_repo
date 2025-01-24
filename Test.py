@@ -132,4 +132,66 @@ for i in range(num_clusters):
     for j, sentence in enumerate(sentences):
         if clusters[j] == i:
             print(f"- {sentence}")
+
+
+
+
+
+
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.mixture import GaussianMixture
+from sklearn.decomposition import TruncatedSVD
+from sklearn.metrics import silhouette_score, davies_bouldin_score
+from sklearn.preprocessing import normalize
+import numpy as np
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from gensim.models import Word2Vec
+
+# Example sentences (unlabelled dataset)
+sentences = [
+    "She is walking to school", "He went to the store", "They will travel tomorrow",
+    "I am reading a book", "We played football yesterday", "He is cooking dinner",
+    "They will go to the market", "She studied hard last night", "I am going home now"
+]
+
+# Step 1: Generate Custom Word Embeddings with Word2Vec
+# Tokenize sentences into words
+tokenized_sentences = [sentence.lower().split() for sentence in sentences]
+
+# Train a Word2Vec model
+word2vec_model = Word2Vec(sentences=tokenized_sentences, vector_size=50, min_count=1, window=5, sg=1)
+
+# Generate sentence embeddings by averaging word embeddings
+def sentence_to_embedding(sentence):
+    words = sentence.lower().split()
+    embeddings = [word2vec_model.wv[word] for word in words if word in word2vec_model.wv]
+    return np.mean(embeddings, axis=0) if embeddings else np.zeros(word2vec_model.vector_size)
+
+sentence_embeddings = np.array([sentence_to_embedding(sentence) for sentence in sentences])
+
+# Step 2: Dimensionality Reduction
+svd = TruncatedSVD(n_components=10, random_state=42)
+reduced_embeddings = svd.fit_transform(sentence_embeddings)
+
+# Normalize embeddings
+normalized_embeddings = normalize(reduced_embeddings)
+
+# Step 3: Clustering with Gaussian Mixture Model (GMM)
+gmm = GaussianMixture(n_components=3, random_state=42)
+clusters = gmm.fit_predict(normalized_embeddings)
+
+# Evaluate clustering
+sil_score = silhouette_score(normalized_embeddings, clusters)
+db_score = davies_bouldin_score(normalized_embeddings, clusters)
+print(f"Silhouette Score: {sil_score:.4f}")
+print(f"Davies-Bouldin Score: {db_score:.4f}")
+
+# Step 4: Analyze Clusters
+for i in range(3):  # Assuming 3 clusters
+    print(f"\nCluster {i}:")
+    for j, sentence in enumerate(sentences):
+        if clusters[j] == i:
+            print(f"- {sentence}")
+            
             
