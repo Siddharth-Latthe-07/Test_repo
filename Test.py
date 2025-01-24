@@ -240,5 +240,53 @@ for i in range(3):  # Assuming 3 clusters
     for j, sentence in enumerate(sentences):
         if clusters[j] == i:
             print(f"- {sentence}")
+
+
+
+
+
+
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import SpectralClustering
+from sklearn.metrics import silhouette_score, davies_bouldin_score
+from sklearn.decomposition import TruncatedSVD
+from sklearn.preprocessing import normalize
+import numpy as np
+
+# Example sentences (unlabelled dataset)
+sentences = [
+    "She is walking to school", "He went to the store", "They will travel tomorrow",
+    "I am reading a book", "We played football yesterday", "He is cooking dinner",
+    "They will go to the market", "She studied hard last night", "I am going home now"
+]
+
+# Step 1: Feature Extraction with TF-IDF (with bigrams)
+vectorizer = TfidfVectorizer(ngram_range=(1, 2))  # Use unigrams and bigrams
+tfidf_features = vectorizer.fit_transform(sentences)
+
+# Step 2: Dimensionality Reduction
+svd = TruncatedSVD(n_components=10, random_state=42)
+reduced_features = svd.fit_transform(tfidf_features)
+
+# Normalize features
+normalized_features = normalize(reduced_features)
+
+# Step 3: Clustering with Spectral Clustering
+spectral = SpectralClustering(n_clusters=3, affinity='nearest_neighbors', random_state=42)
+clusters = spectral.fit_predict(normalized_features)
+
+# Evaluate clustering
+sil_score = silhouette_score(normalized_features, clusters)
+db_score = davies_bouldin_score(normalized_features, clusters)
+print(f"Silhouette Score: {sil_score:.4f}")
+print(f"Davies-Bouldin Score: {db_score:.4f}")
+
+# Step 4: Analyze Clusters
+for i in range(3):  # Assuming 3 clusters
+    print(f"\nCluster {i}:")
+    for j, sentence in enumerate(sentences):
+        if clusters[j] == i:
+            print(f"- {sentence}")
             
             
