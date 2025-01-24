@@ -1235,3 +1235,134 @@ df_test.to_excel('classification_results.xlsx', index=False)
 print("Results saved to 'classification_results.xlsx'")
 
 
+
+
+
+
+
+
+
+
+import pandas as pd
+import spacy
+from sklearn.cluster import KMeans
+from sklearn.manifold import TSNE
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import silhouette_score, classification_report, accuracy_score, confusion_matrix
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Step 1: Load spaCy model
+nlp = spacy.load("en_core_web_md")
+
+# Step 2: Load Dataset
+df = pd.read_excel('your_dataset.xlsx')  # Replace with your file
+sentences = df['CLEANED SENTENCE'].tolist()
+
+# Step 3: Sentence Embeddings
+def get_sentence_embedding(sentence, nlp_model):
+    doc = nlp_model(sentence)
+    word_vectors = [token.vector for token in doc if token.has_vector]
+    if word_vectors:
+        return np.mean(word_vectors, axis=0)  # Average word vectors
+    else:
+        return np.zeros(nlp_model.vector_size)  # Return zero vector if no valid words
+
+sentence_embeddings = np.array([get_sentence_embedding(sentence, nlp) for sentence in sentences], dtype=np.float64)
+
+# Ensure embeddings are not all zeros (fallback mechanism)
+valid_embeddings = np.any(sentence_embeddings, axis=1)
+if not valid_embeddings.all():
+    print("Some embeddings are invalid and will be removed.")
+    df = df[valid_embeddings]
+    sentence_embeddings = sentence_embeddings[valid_embeddings]
+
+# Step 4: Dimensionality Reduction with t-SNE
+tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=300)
+reduced_embeddings = tsne.fit_transform(sentence_embeddings.astype(np.float32))  # Ensure float32 precision
+
+# Step 5: KMeans Clustering
+n_clusters = 4  # Assuming 4 tenses
+kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+kmeans.fit(reduced_embeddings)
+
+# Add cluster labels to DataFrame
+df['Cluster'] = kmeans.labels_
+
+# Manual Mapping of Clusters to Tenses
+cluster_to_tense = {
+    0: "Past",
+    1: "Present",
+    2: "Future",
+    3: "Present Continuous"
+}
+df['Tense'] = df['Cluster'].map(cluster_to_tense)
+
+# Save the clustered data
+df.to_excel('clustered_sentences_with_tenses.xlsx', index=False)
+
+# Step 6: Visualize Clusters and Boundaries
+plt.figure(figsize=(10, 8))
+x_min, x_max = reduced_embeddings[:, 0].min() - 1, reduced_embeddings[:, 0].max() + 1
+y_min, y_max = reduced_embeddings[:, 1].min() - 1, reduced_embeddings[:, 1].max() + 1
+xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.01), np.arange(y_min, y_max, 0.01))
+grid_points = np.c_[xx.ravel(), yy.ravel()]
+grid_clusters = kmeans.predict(grid_points)
+
+plt.contourf(xx, yy, grid_clusters.reshape(xx.shape), alpha=0.2, cmap="viridis")
+for cluster in range(n_clusters):
+    cluster_points = reduced_embeddings[kmeans.labels_ == cluster]
+    plt.scatter(cluster_points[:, 0], cluster_points[:, 1], label=f"Cluster {cluster} ({cluster_to_tense[cluster]})")
+plt.title("Cluster Visualization with Boundaries (Tenses)")
+plt.xlabel("t-SNE Component 1")
+plt.ylabel("t-SNE Component 2")
+plt.legend()
+plt.savefig("cluster_visualization_with_boundaries.png")  # Save the plot
+plt.show()
+
+# Step 7: Build a Classification Model
+le = LabelEncoder()
+y = le.fit_transform(df['Tense'])
+X = reduced_embeddings  # Use reduced embeddings for classification
+
+# Split Dataset
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+# Cross-Validation
+clf = RandomForestClassifier(random_state=42)
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+cv_scores = cross_val_score(clf, X_train, y_train, cv=cv, scoring='accuracy')
+
+print("Cross-Validation Scores:", cv_scores)
+print("Mean CV Accuracy:", np.mean(cv_scores))
+
+# Train on Full Training Set
+clf.fit(X_train, y_train)
+
+# Evaluate Model
+y_pred = clf.predict(X_test)
+print("Test Set Accuracy:", accuracy_score(y_test, y_pred))
+print("\nClassification Report:\n", classification_report(y_test, y_pred, target_names=le.classes_))
+
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', xticklabels=le.classes_, yticklabels=le.classes_, cmap='Blues')
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title("Confusion Matrix")
+plt.show()
+
+# Save Results
+df_test = pd.DataFrame({
+    "Sentence": df.iloc[X_test.index]['CLEANED SENTENCE'].values,
+    "Actual Tense": le.inverse_transform(y_test),
+    "Predicted Tense": le.inverse_transform(y_pred)
+})
+df_test.to_excel('classification_results.xlsx', index=False)
+
+print("Results saved to 'classification_results.xlsx'")
+
