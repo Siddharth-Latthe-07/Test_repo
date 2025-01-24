@@ -85,3 +85,51 @@ new_sequence = tokenizer.texts_to_sequences(new_sentence)
 new_padded_sequence = pad_sequences(new_sequence, maxlen=max_length, padding='post')
 prediction = model.predict(new_padded_sequence)
 print("Predicted class:", np.argmax(prediction))  # Output: 2 (Future)
+
+
+
+
+
+
+
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sentence_transformers import SentenceTransformer
+import matplotlib.pyplot as plt
+
+# Example sentences (unlabelled dataset)
+sentences = [
+    "She is walking to school", "He went to the store", "They will travel tomorrow",
+    "I am reading a book", "We played football yesterday", "He is cooking dinner",
+    "They will go to the market", "She studied hard last night", "I am going home now"
+]
+
+# Step 1: Generate Sentence Embeddings
+# Using a pre-trained model from Sentence Transformers
+model = SentenceTransformer('all-MiniLM-L6-v2')
+sentence_embeddings = model.encode(sentences)
+
+# Step 2: Apply K-Means Clustering
+num_clusters = 3  # Assuming 3 clusters for Past, Present, and Future
+kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+kmeans.fit(sentence_embeddings)
+clusters = kmeans.labels_
+
+# Step 3: Visualize Clusters (Optional)
+pca = PCA(n_components=2)
+reduced_embeddings = pca.fit_transform(sentence_embeddings)
+
+plt.figure(figsize=(8, 6))
+for i, label in enumerate(clusters):
+    plt.scatter(reduced_embeddings[i, 0], reduced_embeddings[i, 1], label=f"Cluster {label}")
+    plt.text(reduced_embeddings[i, 0] + 0.02, reduced_embeddings[i, 1] + 0.02, sentences[i], fontsize=9)
+plt.title("Sentence Clusters")
+plt.show()
+
+# Step 4: Analyze Clusters
+for i in range(num_clusters):
+    print(f"\nCluster {i}:")
+    for j, sentence in enumerate(sentences):
+        if clusters[j] == i:
+            print(f"- {sentence}")
+            
