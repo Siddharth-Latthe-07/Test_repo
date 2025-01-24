@@ -698,3 +698,129 @@ df['Tense'] = df['Cluster'].map(cluster_to_tense)
 output_file = 'clustered_sentences_with_tenses.xlsx'
 df.to_excel(output_file, index=False)
 print(f"Tense-labeled sentences saved to {output_file}")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import spacy
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import silhouette_score
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import seaborn as sns
+
+# Step 1: Load the spaCy model
+nlp = spacy.load("en_core_web_md")
+
+# Step 2: Load your dataset
+df = pd.read_excel('your_dataset.xlsx')  # Replace with your actual file path
+sentences = df['CLEANED SENTENCE'].tolist()
+
+# Step 3: Function to get sentence embeddings by averaging word vectors
+def get_sentence_embedding(sentence, nlp_model):
+    doc = nlp_model(sentence)
+    word_vectors = [token.vector for token in doc if token.has_vector]
+    if word_vectors:
+        return np.mean(word_vectors, axis=0)  # Average of word vectors
+    else:
+        return np.zeros(nlp_model.vector_size)  # If no valid word vectors, return zero vector
+
+# Generate embeddings for all sentences
+sentence_embeddings = [get_sentence_embedding(sentence, nlp) for sentence in sentences]
+
+# Step 4: Apply clustering using KMeans
+n_clusters = 4  # Set to the number of tenses
+kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+kmeans.fit(sentence_embeddings)
+
+# Add cluster labels to the DataFrame
+df['Cluster'] = kmeans.labels_
+
+# Step 5: Visualize the clusters (optional)
+pca = PCA(n_components=2)
+reduced_embeddings = pca.fit_transform(sentence_embeddings)
+
+plt.figure(figsize=(8, 6))
+plt.scatter(reduced_embeddings[:, 0], reduced_embeddings[:, 1], c=kmeans.labels_, cmap='viridis')
+plt.colorbar()
+plt.title("Clustered Sentences based on Tense")
+plt.show()
+
+# Step 6: Evaluate clustering performance
+silhouette_avg = silhouette_score(sentence_embeddings, kmeans.labels_)
+print("Silhouette Score:", silhouette_avg)
+
+# Step 7: Analyze clusters
+print("\nClusters identified (use this to map to tenses):")
+cluster_summary = df.groupby('Cluster').size()
+print(cluster_summary)
+
+# Step 8: Map clusters to tenses (Update mapping based on inspection)
+cluster_to_tense = {
+    0: "Past",
+    1: "Present",
+    2: "Future",
+    3: "Present Continuous"
+}
+
+# Add the mapped tenses to the DataFrame
+df['Tense'] = df['Cluster'].map(cluster_to_tense)
+
+# Step 9: Save the clustering results to an Excel file
+output_file = 'clustered_sentences_with_tenses.xlsx'
+df.to_excel(output_file, index=False)
+print(f"Tense-labeled sentences saved to {output_file}")
+
+# Step 10: Prepare data for classification model
+X = np.array(sentence_embeddings)
+y = df['Tense']
+
+# Encode target labels into numerical values
+from sklearn.preprocessing import LabelEncoder
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+# Step 11: Train a Random Forest Classifier
+clf = RandomForestClassifier(random_state=42)
+clf.fit(X_train, y_train)
+
+# Step 12: Make predictions
+y_pred = clf.predict(X_test)
+
+# Step 13: Evaluate the classification model
+accuracy = accuracy_score(y_test, y_pred)
+print("Classification Accuracy:", accuracy)
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=le.classes_))
+
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', xticklabels=le.classes_, yticklabels=le.classes_, cmap='Blues')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.title('Confusion Matrix')
+plt.show()
+
+# Save classification results to Excel
+df_test = pd.DataFrame({
+    "Sentence": df.iloc[y_test.index]['CLEANED SENTENCE'].values,
+    "Actual Tense": le.inverse_transform(y_test),
+    "Predicted Tense": le.inverse_transform(y_pred)
+})
+df_test.to_excel('classification_results.xlsx', index=False)
+print("Classification results saved to classification_results.xlsx")
