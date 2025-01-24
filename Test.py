@@ -824,3 +824,142 @@ df_test = pd.DataFrame({
 })
 df_test.to_excel('classification_results.xlsx', index=False)
 print("Classification results saved to classification_results.xlsx")
+
+
+
+
+
+
+
+
+import pandas as pd
+import spacy
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, silhouette_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from nltk.corpus import wordnet
+import random
+
+# Step 1: Load the spaCy model
+nlp = spacy.load("en_core_web_md")
+
+# Step 2: Load the dataset
+df = pd.read_excel('your_dataset.xlsx')  # Replace with the actual file path
+sentences = df['CLEANED SENTENCE'].tolist()
+
+# Step 3: Generate sentence embeddings using spaCy
+def get_sentence_embedding(sentence, nlp_model):
+    doc = nlp_model(sentence)
+    word_vectors = [token.vector for token in doc if token.has_vector]
+    if word_vectors:
+        return np.mean(word_vectors, axis=0)  # Average word vectors
+    else:
+        return np.zeros(nlp_model.vector_size)  # Return zero vector if no valid words
+
+sentence_embeddings = [get_sentence_embedding(sentence, nlp) for sentence in sentences]
+
+# Step 4: Perform clustering using KMeans
+n_clusters = 4  # Assuming 4 tenses
+kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+kmeans.fit(sentence_embeddings)
+
+# Add cluster labels to the DataFrame
+df['Cluster'] = kmeans.labels_
+
+# Step 5: Map clusters to tenses (manual mapping after analyzing clusters)
+cluster_to_tense = {
+    0: "Past",
+    1: "Present",
+    2: "Future",
+    3: "Present Continuous"
+}
+df['Tense'] = df['Cluster'].map(cluster_to_tense)
+
+# Save clustering results
+df.to_excel('clustered_sentences_with_tenses.xlsx', index=False)
+
+# Step 6: Data Augmentation using Synonym Replacement
+def augment_sentence(sentence, nlp_model, num_replacements=2):
+    doc = nlp_model(sentence)
+    augmented_sentence = []
+    for token in doc:
+        if token.is_alpha and random.random() < 0.3:  # Replace only some words randomly
+            synonyms = wordnet.synsets(token.text)
+            if synonyms:
+                replacement = synonyms[0].lemmas()[0].name()
+                augmented_sentence.append(replacement if replacement else token.text)
+            else:
+                augmented_sentence.append(token.text)
+        else:
+            augmented_sentence.append(token.text)
+    return ' '.join(augmented_sentence)
+
+# Generate augmented data
+augmented_sentences = []
+augmented_tenses = []
+for idx, row in df.iterrows():
+    for _ in range(3):  # Generate 3 augmented sentences for each original
+        augmented_sentences.append(augment_sentence(row['CLEANED SENTENCE'], nlp))
+        augmented_tenses.append(row['Tense'])
+
+# Add augmented data to the original dataset
+augmented_embeddings = [get_sentence_embedding(sentence, nlp) for sentence in augmented_sentences]
+X = np.vstack((sentence_embeddings, augmented_embeddings))
+y = df['Tense'].tolist() + augmented_tenses
+
+# Combine the original and augmented data into a new DataFrame
+augmented_df = pd.DataFrame({
+    'Sentence': sentences + augmented_sentences,
+    'Tense': df['Tense'].tolist() + augmented_tenses
+})
+augmented_df.to_excel('augmented_dataset_with_tenses.xlsx', index=False)
+
+# Step 7: Encode target labels
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+
+# Step 8: Split into training and testing datasets
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+# Step 9: Perform cross-validation
+clf = RandomForestClassifier(random_state=42)
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+cv_scores = cross_val_score(clf, X_train, y_train, cv=cv, scoring='accuracy')
+
+print("Cross-Validation Scores:", cv_scores)
+print("Mean CV Accuracy:", np.mean(cv_scores))
+
+# Step 10: Train the model on the entire training data
+clf.fit(X_train, y_train)
+
+# Step 11: Make predictions and evaluate the model
+y_pred = clf.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print("\nTest Set Accuracy:", accuracy)
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=le.classes_))
+
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', xticklabels=le.classes_, yticklabels=le.classes_, cmap='Blues')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.title('Confusion Matrix')
+plt.show()
+
+# Save classification results
+df_test = pd.DataFrame({
+    "Sentence": augmented_df.iloc[y_test.index]['Sentence'].values,
+    "Actual Tense": le.inverse_transform(y_test),
+    "Predicted Tense": le.inverse_transform(y_pred)
+})
+df_test.to_excel('classification_results_with_augmentation.xlsx', index=False)
+print("Classification results saved to classification_results_with_augmentation.xlsx")
+
