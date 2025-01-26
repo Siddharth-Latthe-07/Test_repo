@@ -1844,3 +1844,75 @@ plt.show()
 
 
 
+
+import pandas as pd
+import numpy as np
+import spacy
+from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
+
+# Load SpaCy model
+nlp = spacy.load("en_core_web_sm")
+
+# Load dataset
+df = pd.read_excel("input_dataset.xlsx")  # Replace with your dataset file
+sentences = df['CLEANED SENTENCE'].tolist()
+
+# Feature extraction function
+def extract_features(sentence):
+    doc = nlp(sentence)
+    # Use fixed-length sentence embedding from SpaCy
+    sentence_vector = doc.vector
+    return sentence_vector
+
+# Extract features for all sentences
+X = []
+for sentence in sentences:
+    try:
+        features = extract_features(sentence)
+        X.append(features)
+    except Exception as e:
+        print(f"Error processing sentence: {sentence}, Error: {e}")
+
+# Convert to a numpy array (ensure consistent shape)
+X = np.array(X)
+
+# Clustering based on tense
+kmeans = KMeans(n_clusters=4, random_state=42)
+labels = kmeans.fit_predict(X)
+
+# Add cluster labels to the dataframe
+df['TENSE_CLUSTER'] = labels
+
+# Map clusters to tenses (manual mapping based on inspection)
+tense_mapping = {0: 'Past', 1: 'Present', 2: 'Future', 3: 'Present Continuous'}
+df['TENSE'] = df['TENSE_CLUSTER'].map(tense_mapping)
+
+# Save the new dataset
+df.to_excel("output_dataset_with_tense.xlsx", index=False)
+
+# Train a classification model
+le = LabelEncoder()
+y = le.fit_transform(df['TENSE'])
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+clf = RandomForestClassifier(random_state=42)
+clf.fit(X_train, y_train)
+
+# Evaluate model
+y_pred = clf.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print("Accuracy:", accuracy)
+print("Classification Report:\n", classification_report(y_test, y_pred))
+
+# Visualize clusters
+plt.figure(figsize=(10, 6))
+plt.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis')
+plt.title("Cluster Visualization")
+plt.xlabel("Feature 1")
+plt.ylabel("Feature 2")
+plt.show()
