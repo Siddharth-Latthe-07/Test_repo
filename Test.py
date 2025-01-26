@@ -1628,3 +1628,135 @@ print("Results saved to 'classification_results.xlsx'")
 
 
 
+
+
+import pandas as pd
+import spacy
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, silhouette_score, accuracy_score
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Step 1: Load SpaCy model
+nlp = spacy.load("en_core_web_sm")  # Use a smaller model with dependency parsing
+
+# Step 2: Load Dataset
+df = pd.read_excel("your_dataset.xlsx")  # Replace with your dataset file
+sentences = df["CLEANED SENTENCE"].tolist()
+
+# Step 3: Extract Syntactic Features
+def extract_syntactic_features(sentence, nlp_model):
+    doc = nlp_model(sentence)
+    features = []
+    for token in doc:
+        features.append([
+            token.dep_,           # Dependency relation
+            token.tag_,           # Detailed POS tag
+            token.head.text,      # Head word of the dependency
+            token.head.pos_       # POS tag of the head word
+        ])
+    return features
+
+# Convert syntactic features into numerical vectors
+def sentence_to_features(sentence, nlp_model):
+    doc = nlp_model(sentence)
+    features = []
+    for token in doc:
+        # Vectorize syntactic information
+        features.append([
+            token.vector,         # Word vector
+            len(token.dep_),      # Dependency length
+            len(token.tag_),      # Tag length
+            len(token.head.text)  # Head word length
+        ])
+    return np.mean(features, axis=0) if features else np.zeros(nlp_model.vector_size)
+
+syntactic_embeddings = np.array([sentence_to_features(sentence, nlp) for sentence in sentences])
+
+# Step 4: Dimensionality Reduction for Clustering
+pca = PCA(n_components=2, random_state=42)
+reduced_embeddings = pca.fit_transform(syntactic_embeddings)
+
+# Step 5: KMeans Clustering
+n_clusters = 4  # Assuming 4 tenses: Past, Present, Future, Present Continuous
+kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+kmeans.fit(reduced_embeddings)
+df["Cluster"] = kmeans.labels_
+
+# Map clusters to tenses manually
+cluster_to_tense = {
+    0: "Past",
+    1: "Present",
+    2: "Future",
+    3: "Present Continuous"
+}
+df["Tense"] = df["Cluster"].map(cluster_to_tense)
+
+# Save clustered data
+df.to_excel("syntactic_clustered_sentences.xlsx", index=False)
+
+# Step 6: Visualize Clusters
+plt.figure(figsize=(10, 8))
+for cluster in range(n_clusters):
+    cluster_points = reduced_embeddings[kmeans.labels_ == cluster]
+    plt.scatter(cluster_points[:, 0], cluster_points[:, 1], label=f"Cluster {cluster} ({cluster_to_tense[cluster]})")
+plt.title("PCA-Based Clusters (Syntactic Features)")
+plt.xlabel("PCA Component 1")
+plt.ylabel("PCA Component 2")
+plt.legend()
+plt.savefig("syntactic_clusters.png")
+plt.show()
+
+# Step 7: Build Classification Model
+le = LabelEncoder()
+y = le.fit_transform(df["Tense"])
+X = syntactic_embeddings  # Use syntactic embeddings for classification
+
+# Split Dataset
+X_train, X_test, y_train, y_test, train_indices, test_indices = train_test_split(
+    X, y, df.index, test_size=0.2, random_state=42, stratify=y
+)
+
+# Cross-Validation
+clf = RandomForestClassifier(random_state=42)
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+cv_scores = cross_val_score(clf, X_train, y_train, cv=cv, scoring="accuracy")
+
+print("Cross-Validation Scores:", cv_scores)
+print("Mean CV Accuracy:", np.mean(cv_scores))
+
+# Train on Full Training Set
+clf.fit(X_train, y_train)
+
+# Evaluate Model
+y_pred = clf.predict(X_test)
+print("Test Set Accuracy:", accuracy_score(y_test, y_pred))
+print("\nClassification Report:\n", classification_report(y_test, y_pred, target_names=le.classes_))
+
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt="d", xticklabels=le.classes_, yticklabels=le.classes_, cmap="Blues")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title("Confusion Matrix")
+plt.show()
+
+# Save Results
+df_test = pd.DataFrame({
+    "Sentence": df.iloc[test_indices]["CLEANED SENTENCE"].values,
+    "Actual Tense": le.inverse_transform(y_test),
+    "Predicted Tense": le.inverse_transform(y_pred)
+})
+df_test.to_excel("syntactic_classification_results.xlsx", index=False)
+
+print("Results saved to 'syntactic_classification_results.xlsx'")
+
+
+
+
