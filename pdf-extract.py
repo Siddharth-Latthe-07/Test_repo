@@ -73,3 +73,49 @@ def extract_text_without_tables(pdf_path, output_path):
 input_pdf = "methodology-sp-us-indices.pdf"  # Replace with your PDF file path
 output_txt = "formatted_text_without_tables.txt"  # Replace with your desired text file path
 extract_text_without_tables(input_pdf, output_txt)
+
+
+
+
+
+
+
+
+
+import fitz
+
+def extract_text_without_tables_images(pdf_path):
+    doc = fitz.open(pdf_path)
+    extracted_text = ""
+
+    for page in doc:
+        blocks = page.get_text("dict")["blocks"]  # Extract text as blocks
+
+        for block in blocks:
+            if "lines" in block:  # Ignore images and tables
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        font = span["font"]
+                        text = span["text"]
+
+                        # Check for bold or italic fonts
+                        is_bold = "Bold" in font or "Black" in font
+                        is_italic = "Italic" in font or "Oblique" in font
+
+                        if is_bold:
+                            extracted_text += f"**{text}** "  # Markdown bold
+                        elif is_italic:
+                            extracted_text += f"*{text}* "  # Markdown italic
+                        else:
+                            extracted_text += f"{text} "
+                    
+                    extracted_text += "\n"  # Add new line after each line in a block
+
+        extracted_text += "\n"  # New paragraph after each block
+
+    return extracted_text.strip()
+
+# Example usage
+pdf_path = "sample.pdf"  # Replace with your file path
+text = extract_text_without_tables_images(pdf_path)
+print(text)
