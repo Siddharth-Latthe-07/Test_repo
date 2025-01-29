@@ -406,3 +406,76 @@ pdf_path = "sample.pdf"  # Replace with your file path
 text = extract_text_without_images_tables(pdf_path)
 print(text)
 
+
+
+
+
+
+import fitz
+
+def is_table_text(block):
+    """Detects if a block is likely part of a table using heuristics."""
+    if "lines" not in block:
+        return False  # Non-text block (e.g., images)
+    
+    num_lines = len(block["lines"])
+    avg_line_length = sum(len(line["spans"][0]["text"]) for line in block["lines"] if line["spans"]) / num_lines if num_lines else 0
+
+    return num_lines > 2 and avg_line_length < 20  # Short structured text often belongs to tables
+
+def extract_text_without_images_tables(pdf_path):
+    doc = fitz.open(pdf_path)
+    extracted_text = ""
+
+    for page_num in range(len(doc) - 1):  # Excluding the last page
+        page = doc[page_num]
+        blocks = page.get_text("dict")["blocks"]
+
+        # Get bounding boxes of images
+        image_rects = [fitz.Rect(page.get_image_bbox(img[0])) for img in page.get_images(full=True) if img]
+
+        for block in blocks:
+            block_bbox = fitz.Rect(block.get("bbox", (0, 0, 0, 0)))
+
+            # Skip text blocks that overlap with images
+            if any(block_bbox.intersects(img_rect) for img_rect in image_rects):
+                continue
+
+            # Skip table-like text
+            if is_table_text(block):
+                continue
+
+            if "lines" in block:  # Ensure it's a text block
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        font = span["font"]
+                        text = span["text"].strip()
+
+                        if not text:  # Skip empty spans
+                            continue
+
+                        # **Ensure OCR Text is Ignored**
+                        if span.get("flags", 0) & 2:  # If OCR-generated text, ignore it
+                            continue
+
+                        # Style Detection
+                        is_bold = "Bold" in font or "Black" in font
+                        is_italic = "Italic" in font or "Oblique" in font
+
+                        if is_bold:
+                            extracted_text += f"**{text}** "  # Markdown Bold
+                        elif is_italic:
+                            extracted_text += f"*{text}* "  # Markdown Italic
+                        else:
+                            extracted_text += f"{text} "
+
+                    extracted_text += "\n"  # New line after each processed line
+
+        extracted_text += "\n"  # New paragraph after each block
+
+    return extracted_text.strip()
+
+# Example usage
+pdf_path = "sample.pdf"  # Replace with your file path
+text = extract_text_without_images_tables(pdf_path)
+print(text)
