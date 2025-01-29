@@ -479,3 +479,112 @@ def extract_text_without_images_tables(pdf_path):
 pdf_path = "sample.pdf"  # Replace with your file path
 text = extract_text_without_images_tables(pdf_path)
 print(text)
+
+
+
+
+
+
+
+
+
+
+
+import fitz
+from collections import defaultdict
+
+def detect_header_footer(pdf_path):
+    """Detects repeated headers and footers across multiple pages."""
+    doc = fitz.open(pdf_path)
+    header_footer_text = defaultdict(int)
+
+    for page_num in range(len(doc) - 1):  # Exclude last page
+        page = doc[page_num]
+        blocks = page.get_text("dict")["blocks"]
+
+        for block in blocks:
+            text = block.get("lines", [{}])[0].get("spans", [{}])[0].get("text", "").strip()
+            if text:
+                header_footer_text[text] += 1
+
+    # Identify text appearing on most pages as headers/footers
+    total_pages = len(doc) - 1
+    common_texts = {text for text, count in header_footer_text.items() if count > total_pages * 0.5}
+
+    return common_texts
+
+def is_table_text(block):
+    """Detects if a block is likely a table using heuristics."""
+    if "lines" not in block:
+        return False  # Non-text block (e.g., images)
+    
+    num_lines = len(block["lines"])
+    avg_line_length = sum(len(line["spans"][0]["text"]) for line in block["lines"] if line["spans"]) / num_lines if num_lines else 0
+
+    return num_lines > 2 and avg_line_length < 20  # Short structured text often belongs to tables
+
+def extract_clean_text(pdf_path):
+    """Extracts text excluding images, tables, and headers/footers."""
+    doc = fitz.open(pdf_path)
+    extracted_text = ""
+
+    # Detect common headers/footers
+    headers_footers = detect_header_footer(pdf_path)
+
+    for page_num in range(len(doc) - 1):  # Skipping last page
+        page = doc[page_num]
+        blocks = page.get_text("dict")["blocks"]
+        
+        # Detect image bounding boxes
+        image_rects = [fitz.Rect(page.get_image_bbox(img[0])) for img in page.get_images(full=True) if img]
+
+        for block in blocks:
+            block_bbox = fitz.Rect(block.get("bbox", (0, 0, 0, 0)))
+            text = block.get("lines", [{}])[0].get("spans", [{}])[0].get("text", "").strip()
+
+            # Skip headers and footers
+            if text in headers_footers:
+                continue
+
+            # Skip text blocks that overlap with images
+            if any(block_bbox.intersects(img_rect) for img_rect in image_rects):
+                continue
+
+            # Skip tables
+            if is_table_text(block):
+                continue
+
+            if "lines" in block:  # Ensure it's a text block
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        font = span["font"]
+                        text = span["text"].strip()
+
+                        if not text:  # Skip empty spans
+                            continue
+
+                        # Ignore OCR-generated text (from images)
+                        if span.get("flags", 0) & 2:
+                            continue
+
+                        # Style Detection
+                        is_bold = "Bold" in font or "Black" in font
+                        is_italic = "Italic" in font or "Oblique" in font
+
+                        if is_bold:
+                            extracted_text += f"**{text}** "  # Markdown Bold
+                        elif is_italic:
+                            extracted_text += f"*{text}* "  # Markdown Italic
+                        else:
+                            extracted_text += f"{text} "
+
+                    extracted_text += "\n"  # New line after each processed line
+
+        extracted_text += "\n"  # New paragraph after each block
+
+    return extracted_text.strip()
+
+# Example usage
+pdf_path = "sample.pdf"  # Replace with your PDF file path
+clean_text = extract_clean_text(pdf_path)
+print(clean_text)
