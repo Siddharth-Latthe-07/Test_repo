@@ -119,3 +119,65 @@ def extract_text_without_tables_images(pdf_path):
 pdf_path = "sample.pdf"  # Replace with your file path
 text = extract_text_without_tables_images(pdf_path)
 print(text)
+
+
+
+
+
+
+
+import fitz
+
+def is_table_text(block):
+    """Heuristic function to detect if a block belongs to a table."""
+    if "lines" not in block:
+        return False  # Non-text block (e.g., images)
+
+    num_lines = len(block["lines"])
+    avg_line_length = sum(len(line["spans"][0]["text"]) for line in block["lines"] if line["spans"]) / num_lines if num_lines else 0
+    
+    # Heuristics: Tables often have short lines and structured alignment
+    return num_lines > 2 and avg_line_length < 20  # Adjust based on need
+
+def extract_clean_text(pdf_path):
+    doc = fitz.open(pdf_path)
+    extracted_text = ""
+
+    for page in doc:
+        blocks = page.get_text("dict")["blocks"]
+
+        for block in blocks:
+            if is_table_text(block):  # Skip table-like text
+                continue
+
+            if "lines" in block:  # Ensure it's a text block
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        font = span["font"]
+                        text = span["text"].strip()
+
+                        if not text:  # Skip empty spans
+                            continue
+
+                        # Style Detection
+                        is_bold = "Bold" in font or "Black" in font
+                        is_italic = "Italic" in font or "Oblique" in font
+
+                        if is_bold:
+                            extracted_text += f"**{text}** "  # Markdown Bold
+                        elif is_italic:
+                            extracted_text += f"*{text}* "  # Markdown Italic
+                        else:
+                            extracted_text += f"{text} "
+
+                    extracted_text += "\n"  # New line after each processed line
+
+        extracted_text += "\n"  # New paragraph after each block
+
+    return extracted_text.strip()
+
+# Example usage
+pdf_path = "sample.pdf"  # Replace with your file path
+text = extract_clean_text(pdf_path)
+print(text)
+
