@@ -204,14 +204,14 @@ def extract_text_without_images_tables(pdf_path):
     for page in doc:
         blocks = page.get_text("dict")["blocks"]
 
-        # Get image locations to ensure no text is extracted from image areas
-        image_rects = [img["bbox"] for img in page.get_images(full=True, output="dict")]
+        # Get image bounding boxes (rectangles)
+        image_rects = [page.get_image_bbox(img[0]) for img in page.get_images(full=True)]
 
         for block in blocks:
-            block_bbox = block.get("bbox", (0, 0, 0, 0))
+            block_bbox = fitz.Rect(block.get("bbox", (0, 0, 0, 0)))
 
-            # Skip blocks overlapping with images
-            if any(fitz.Rect(block_bbox).intersects(fitz.Rect(img_bbox)) for img_bbox in image_rects):
+            # Skip text blocks that overlap with images
+            if any(block_bbox.intersects(img_rect) for img_rect in image_rects):
                 continue
 
             # Skip table-like text
