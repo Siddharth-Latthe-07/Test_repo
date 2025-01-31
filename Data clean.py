@@ -94,3 +94,45 @@ sheet_name = "Sheet1"  # Change this to your actual sheet name
 process_sheet(input_file, output_file, sheet_name)
 
 print("Processing complete. Cleaned file saved as:", output_file)
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import re
+
+# Function to check if a string contains Hindi characters
+def contains_hindi(text):
+    hindi_pattern = re.compile(r'[\u0900-\u097F]')  # Unicode range for Hindi
+    return bool(hindi_pattern.search(text))
+
+# Function to clean the description column
+def clean_description(text):
+    if pd.isna(text):  # Check if value is NaN
+        return text
+    # Remove Hindi sentences
+    lines = text.split("\n")
+    english_lines = [line for line in lines if not contains_hindi(line)]
+    cleaned_text = " ".join(english_lines)
+    # Remove special characters and numbers
+    cleaned_text = re.sub(r'[^A-Za-z\s]', '', cleaned_text)
+    return cleaned_text.strip()
+
+# Load Excel file and focus on the 'drad' sheet
+file_path = "your_file.xlsx"  # Update with actual file path
+df = pd.read_excel(file_path, sheet_name="drad")
+
+# Apply cleaning function to the 'description' column
+df['description'] = df['description'].astype(str).apply(clean_description)
+
+# Save the cleaned data back to an Excel file
+df.to_excel("cleaned_file.xlsx", sheet_name="drad", index=False)
+
+print("Data cleaning completed. Check 'cleaned_file.xlsx'.")
