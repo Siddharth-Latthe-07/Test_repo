@@ -95,3 +95,70 @@ def extract_text_without_tables(pdf_path, output_path):
 input_pdf = "methodology-sp-us-indices.pdf"  # Replace with your PDF file path
 output_txt = "formatted_text_without_tables.txt"  # Replace with your desired text file path
 extract_text_without_tables(input_pdf, output_txt)
+
+
+
+
+
+
+
+import fitz  # PyMuPDF
+import re
+from collections import defaultdict
+
+def extract_participants(pdf_path):
+    """ Extracts participant names from the 'Call Participants' section """
+    doc = fitz.open(pdf_path)
+    participants = set()
+    capture = False  # Flag to start capturing names
+
+    for page in doc:
+        text = page.get_text("text")
+        lines = text.split("\n")
+
+        for line in lines:
+            if "Call Participants" in line:
+                capture = True  # Start capturing names
+            elif capture and line.strip() == "":
+                capture = False  # Stop capturing when an empty line is encountered
+            elif capture:
+                participants.add(line.strip())  # Add name to set
+    
+    return participants
+
+def extract_text_by_speaker(pdf_path, participants):
+    """ Extracts and groups text spoken by each participant """
+    doc = fitz.open(pdf_path)
+    text_by_speaker = defaultdict(str)
+    current_speaker = None
+
+    for page in doc:
+        text = page.get_text("text")
+        lines = text.split("\n")
+
+        for line in lines:
+            if line.strip() in participants:  # If the line is a known speaker
+                current_speaker = line.strip()
+                continue  # Move to the next line
+
+            if current_speaker:
+                text_by_speaker[current_speaker] += line + " "
+
+    # Convert dictionary to a list of dictionaries
+    result = [{speaker: text.strip()} for speaker, text in text_by_speaker.items()]
+    return result
+
+# Example Usage
+pdf_path = "/mnt/data/3Q-24-Earnings-Call-Transcript (1).pdf"
+
+# Step 1: Extract participants
+participants = extract_participants(pdf_path)
+
+# Step 2: Extract text and group by speaker
+output = extract_text_by_speaker(pdf_path, participants)
+
+# Print output
+for entry in output:
+    print(entry)
+    
+
