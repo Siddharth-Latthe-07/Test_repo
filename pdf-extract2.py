@@ -162,3 +162,98 @@ for entry in output:
     print(entry)
     
 
+
+
+
+
+
+
+import fitz  # PyMuPDF
+import json
+from collections import defaultdict
+
+def extract_executive_names(pdf_path):
+    """ Extracts executive names from the 'Call Participants' section, ignoring roles. """
+    doc = fitz.open(pdf_path)
+    executives = []
+    capture = False  # Flag to capture names
+
+    for page in doc:
+        text = page.get_text("text")
+        lines = text.split("\n")
+
+        for i in range(len(lines)):
+            line = lines[i].strip()
+
+            # Start capturing names after "EXECUTIVES"
+            if "EXECUTIVES" in line:
+                capture = True
+                continue
+            
+            # Stop capturing when "ANALYSTS" is reached
+            if "ANALYSTS" in line:
+                capture = False
+                break
+
+            # Capture executive names while skipping empty lines and roles
+            if capture and line and not any(word in line for word in ["Chief", "Vice", "President", "CEO", "Officer"]):
+                executives.append(line)
+
+    return set(executives)  # Return as a unique set
+
+def extract_text_by_executive(pdf_path, executives):
+    """ Extracts and groups spoken content by each executive while removing headers/footers. """
+    doc = fitz.open(pdf_path)
+    text_by_executive = defaultdict(str)
+    current_speaker = None
+
+    for page in doc:  # Includes last page now
+        text = page.get_text("text")
+        lines = text.split("\n")
+
+        for line in lines:
+            line = line.strip()
+
+            # Ignore headers/footers
+            if "Copyright © 2024 S&P Global" in line or "spglobal.com" in line:
+                continue
+
+            # Ignore Operator and Analysts
+            if line.lower().startswith(("operator", "analyst", "q&a")):
+                current_speaker = None
+                continue
+
+            # Detect when an executive starts speaking
+            if line in executives:
+                current_speaker = line
+                continue  # Skip to next line
+
+            # Append content to the respective executive
+            if current_speaker:
+                text_by_executive[current_speaker] += line + " "
+
+    return text_by_executive
+
+# Example Usage
+pdf_path = "3Q-24-Earnings-Call-Transcript.pdf"
+
+# Step 1: Extract executive names
+executives = extract_executive_names(pdf_path)
+print("Extracted Executives:", executives)  # Debugging step
+
+# Step 2: Extract text and group by executive
+output_dict = extract_text_by_executive(pdf_path, executives)
+
+# Step 3: Convert to JSON format
+json_output = json.dumps(output_dict, indent=4)
+
+# Save to a JSON file
+output_file_path = "executives_earnings_call.json"
+with open(output_file_path, "w", encoding="utf-8") as json_file:
+    json_file.write(json_output)
+
+# Print JSON output
+print(json_output)
+
+# Print path to saved JSON file
+print(f"JSON saved to: {output_file_path}")
