@@ -1002,3 +1002,115 @@ print(json_output)
 # Print path to saved JSON file
 print(f"JSON saved to: {output_file_path}")
 
+
+
+
+
+
+
+
+
+import fitz  # PyMuPDF
+import json
+import re
+from collections import defaultdict
+
+def extract_executive_names(pdf_path):
+    """ Extracts executive names from the 'Call Participants' section robustly. """
+    doc = fitz.open(pdf_path)
+    executives = []
+    capture = False  # Flag to capture names
+    stop_keywords = ["analysts", "moderator", "operator", "questions and answers"]  # Stop capturing on these
+    role_keywords = ["chief", "vice", "president", "ceo", "officer", "head"]  # Role-based filtering
+
+    for page in doc:
+        text = page.get_text("text")
+        lines = text.split("\n")
+
+        for i in range(len(lines)):
+            line = lines[i].strip().lower()
+
+            # Start capturing after "EXECUTIVES" or "Call Participants"
+            if "executives" in line or "call participants" in line:
+                capture = True
+                continue
+            
+            # Stop capturing if a stopping keyword appears
+            if any(keyword in line for keyword in stop_keywords):
+                capture = False
+                break  
+
+            # Capture executive names, but skip role descriptions
+            if capture and line and not any(word in line for word in role_keywords):
+                executives.append(lines[i].strip())  # Store original case name
+
+    return set(executives)  # Return unique executive names
+
+def remove_headers_footers(lines):
+    """ Removes headers and footers from a page's text. """
+    cleaned_lines = []
+    for line in lines:
+        # Skip headers/footers with specific patterns
+        if any(keyword in line.lower() for keyword in [
+            "copyright", "s&p global", "market intelligence", "earnings call", "conference call", "call transcript"
+        ]):
+            continue
+        cleaned_lines.append(line.strip())
+    
+    return cleaned_lines
+
+def extract_text_by_executive(pdf_path, executives):
+    """ Extracts and groups spoken content by each executive while removing headers/footers. """
+    doc = fitz.open(pdf_path)
+    text_by_executive = defaultdict(str)
+    current_speaker = None
+
+    for page in doc:  # Includes last page now
+        text = page.get_text("text")
+        lines = text.split("\n")
+
+        # Remove headers and footers before processing
+        lines = remove_headers_footers(lines)
+
+        for line in lines:
+            line = line.strip()
+
+            # Ignore Operator and Analysts
+            if line.lower().startswith(("operator", "analyst", "q&a", "moderator")):
+                current_speaker = None
+                continue
+
+            # Detect when an executive starts speaking
+            if line in executives:
+                current_speaker = line
+                continue  # Skip to next line
+
+            # Append content to the respective executive
+            if current_speaker:
+                text_by_executive[current_speaker] += line + " "
+
+    return text_by_executive
+
+# Example Usage
+pdf_path = "/mnt/data/3Q-24-Earnings-Call-Transcript.pdf"
+
+# Step 1: Extract executive names (robust method)
+executives = extract_executive_names(pdf_path)
+print("Extracted Executives:", executives)  # Debugging step
+
+# Step 2: Extract text and group by executive
+output_dict = extract_text_by_executive(pdf_path, executives)
+
+# Step 3: Convert to JSON format
+json_output = json.dumps(output_dict, indent=4)
+
+# Save to a JSON file
+output_file_path = "/mnt/data/executives_earnings_call.json"
+with open(output_file_path, "w", encoding="utf-8") as json_file:
+    json_file.write(json_output)
+
+# Print JSON output
+print(json_output)
+
+# Print path to saved JSON file
+print(f"JSON saved to: {output_file_path}")
