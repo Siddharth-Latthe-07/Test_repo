@@ -1338,3 +1338,116 @@ print(json_output)
 
 # Print path to saved JSON file
 print(f"JSON saved to: {output_file_path}")
+
+
+
+
+
+
+
+
+
+
+import fitz  # PyMuPDF
+import json
+from collections import defaultdict
+
+def detect_executive_style(pdf_path):
+    """Detects the text style (font, size) of 'EXECUTIVES' dynamically."""
+    doc = fitz.open(pdf_path)
+
+    for page in doc:
+        text_blocks = page.get_text("dict")["blocks"]  
+        for block in text_blocks:
+            if "lines" in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        if "EXECUTIVES" in span["text"]:
+                            return span["font"], span["size"]  # Return font and size of "EXECUTIVES"
+
+    return None, None  # Return None if not found
+
+def extract_executive_names(pdf_path, exec_font, exec_size):
+    """Extracts only executive names using the detected text style."""
+    doc = fitz.open(pdf_path)
+    executives = []
+    capture = False
+
+    for page in doc:
+        text_blocks = page.get_text("dict")["blocks"]
+        for block in text_blocks:
+            if "lines" in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        text = span["text"].strip()
+
+                        # Start capturing after 'EXECUTIVES'
+                        if text == "EXECUTIVES" and span["font"] == exec_font and span["size"] == exec_size:
+                            capture = True
+                            continue
+
+                        # Stop capturing when another text of the same style appears (new section)
+                        if capture and text.isupper() and span["font"] == exec_font and span["size"] == exec_size:
+                            capture = False
+                            break
+
+                        # Capture only executive names, ignore roles
+                        if capture and text and not any(word in text for word in ["Chief", "Vice", "President", "CEO", "Officer", "Relations"]):
+                            executives.append(text)
+
+    return set(executives)
+
+def extract_executive_speeches(pdf_path, executives):
+    """Extracts and groups only executives' spoken content throughout the document."""
+    doc = fitz.open(pdf_path)
+    text_by_executive = defaultdict(str)
+    current_speaker = None
+
+    for page in doc:
+        text_blocks = page.get_text("dict")["blocks"]
+        for block in text_blocks:
+            if "lines" in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        text = span["text"].strip()
+
+                        # Detect an executive's speech
+                        if text in executives:
+                            current_speaker = text
+                            continue  # Move to the next line
+
+                        # Capture text spoken only by executives
+                        if current_speaker:
+                            text_by_executive[current_speaker] += text + " "
+
+    return text_by_executive
+
+# Example Usage
+pdf_path = "/mnt/data/q2-2024-transcript_1.pdf"
+
+# Step 1: Detect style of "EXECUTIVES"
+exec_font, exec_size = detect_executive_style(pdf_path)
+if not exec_font or not exec_size:
+    print("Error: 'EXECUTIVES' style not found.")
+    exit()
+
+# Step 2: Extract executive names
+executives = extract_executive_names(pdf_path, exec_font, exec_size)
+print("Extracted Executives:", executives)  # Debugging
+
+# Step 3: Extract only executives' spoken text
+executive_speeches = extract_executive_speeches(pdf_path, executives)
+
+# Step 4: Convert to JSON format
+json_output = json.dumps(executive_speeches, indent=4)
+
+# Save to JSON file
+output_file_path = "executives_speeches.json"
+with open(output_file_path, "w", encoding="utf-8") as json_file:
+    json_file.write(json_output)
+
+# Print JSON output
+print(json_output)
+
+# Print path to saved JSON file
+print(f"JSON saved to: {output_file_path}")
