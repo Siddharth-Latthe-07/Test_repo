@@ -1216,3 +1216,125 @@ print(json_output)
 # Print path to saved JSON file
 print(f"JSON saved to: {output_file_path}")
 
+
+
+
+
+
+
+
+
+
+
+
+import fitz  # PyMuPDF
+import json
+from collections import defaultdict
+
+def detect_executive_style(pdf_path):
+    """Detects the text style (font, size) of 'EXECUTIVES' to dynamically extract executives."""
+    doc = fitz.open(pdf_path)
+
+    for page in doc:
+        text_blocks = page.get_text("dict")["blocks"]  # Extract text blocks
+        for block in text_blocks:
+            if "lines" in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        if "EXECUTIVES" in span["text"]:
+                            return span["font"], span["size"]  # Return font and size of "EXECUTIVES"
+
+    return None, None  # Return None if not found
+
+def extract_executive_names(pdf_path, exec_font, exec_size):
+    """Extracts executive names using the detected style."""
+    doc = fitz.open(pdf_path)
+    executives = []
+    capture = False
+
+    for page in doc:
+        text_blocks = page.get_text("dict")["blocks"]
+        for block in text_blocks:
+            if "lines" in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        text = span["text"].strip()
+
+                        # Start capturing after 'EXECUTIVES' detected
+                        if text == "EXECUTIVES" and span["font"] == exec_font and span["size"] == exec_size:
+                            capture = True
+                            continue
+
+                        # Stop capturing when another text of the same style appears
+                        if capture and text.isupper() and span["font"] == exec_font and span["size"] == exec_size:
+                            capture = False
+                            break
+
+                        # Capture executive names (avoid roles)
+                        if capture and text and not any(word in text for word in ["Chief", "Vice", "President", "CEO", "Officer", "Relations"]):
+                            executives.append(text)
+
+    return set(executives)
+
+def extract_executive_speeches(pdf_path, executives):
+    """Extracts and groups spoken content by each executive."""
+    doc = fitz.open(pdf_path)
+    text_by_executive = defaultdict(str)
+    current_speaker = None
+
+    for page in doc:
+        text = page.get_text("text")
+        lines = text.split("\n")
+
+        for line in lines:
+            line = line.strip()
+
+            # Ignore headers/footers
+            if "Copyright ©" in line or "spglobal.com" in line:
+                continue
+
+            # Ignore Operator and Analysts
+            if line.lower().startswith(("operator", "analyst", "q&a", "stakeholders", "question and answer")):
+                current_speaker = None
+                continue
+
+            # Detect when an executive starts speaking
+            if line in executives:
+                current_speaker = line
+                continue  # Skip to next line
+
+            # Append content to the respective executive
+            if current_speaker:
+                text_by_executive[current_speaker] += line + " "
+
+    return text_by_executive
+
+# Example Usage
+pdf_path = "/mnt/data/q2-2024-transcript_1.pdf"
+
+# Step 1: Detect style of "EXECUTIVES"
+exec_font, exec_size = detect_executive_style(pdf_path)
+if not exec_font or not exec_size:
+    print("Error: 'EXECUTIVES' style not found.")
+    exit()
+
+# Step 2: Extract executive names using the detected style
+executives = extract_executive_names(pdf_path, exec_font, exec_size)
+print("Extracted Executives:", executives)
+
+# Step 3: Extract speeches of executives
+output_dict = extract_executive_speeches(pdf_path, executives)
+
+# Step 4: Convert to JSON format
+json_output = json.dumps(output_dict, indent=4)
+
+# Save to a JSON file
+output_file_path = "executives_earnings_call.json"
+with open(output_file_path, "w", encoding="utf-8") as json_file:
+    json_file.write(json_output)
+
+# Print JSON output
+print(json_output)
+
+# Print path to saved JSON file
+print(f"JSON saved to: {output_file_path}")
