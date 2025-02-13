@@ -1643,3 +1643,46 @@ df.to_excel(excel_output_path, index=False)
 
 print(f"Data saved successfully in {excel_output_path}")
 
+
+
+
+
+
+import fitz  # PyMuPDF
+
+def extract_text_from_pdf(pdf_path):
+    text = ""
+    with fitz.open(pdf_path) as doc:
+        for page in doc:
+            text += page.get_text("text") + "\n"
+    return text
+
+def clean_text(text):
+    # Merge lines intelligently: assuming names don't end with punctuation
+    lines = text.split("\n")
+    merged_lines = []
+    buffer = ""
+
+    for line in lines:
+        stripped_line = line.strip()
+        if buffer:  # If there's a buffered line
+            buffer += " " + stripped_line  # Merge with next line
+            merged_lines.append(buffer)
+            buffer = ""  # Reset buffer
+        elif stripped_line:  # If the line isn't empty
+            buffer = stripped_line
+        else:
+            if buffer:
+                merged_lines.append(buffer)
+                buffer = ""
+
+    if buffer:  # Append last buffer if not empty
+        merged_lines.append(buffer)
+
+    return "\n".join(merged_lines)
+
+# Example usage
+pdf_path = "example.pdf"
+raw_text = extract_text_from_pdf(pdf_path)
+cleaned_text = clean_text(raw_text)
+print(cleaned_text)
