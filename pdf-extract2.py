@@ -1812,3 +1812,136 @@ executive_roles_set = {"CEO", "CFO", "COO", "President", "Vice", "Manager"}  # D
 output_json_path = "executive_speeches.json"
 
 process_pdfs(pdf_folder_path, executive_roles_set, output_json_path)
+
+
+
+
+
+
+
+
+
+
+import fitz  # PyMuPDF
+import json
+import os
+import re
+
+def extract_executive_names(pdf_path, executive_roles):
+    """Extracts executive names from a PDF file."""
+    doc = fitz.open(pdf_path)
+    executives = []
+    capture = False
+    previous_bbox = None
+
+    for page in doc:
+        blocks = page.get_text("dict")["blocks"]
+
+        for block in blocks:
+            if 'lines' in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        text = span["text"].strip()
+                        bbox = fitz.Rect(span["bbox"])
+                        font = span["font"]
+
+                        if text == "EXECUTIVES":
+                            capture = True
+                            continue
+
+                        if capture:
+                            if text.isupper():
+                                return set(executives)  # Stop if another section starts
+
+                            if "Italic" not in font:
+                                if previous_bbox:
+                                    vertical_distance = bbox.y0 - previous_bbox.y1
+                                    if vertical_distance < 10:
+                                        executives[-1] = executives[-1] + " " + text
+                                    else:
+                                        executives.append(text)
+                                else:
+                                    executives.append(text)
+                                
+                                previous_bbox = bbox
+
+    cleaned_executives = set()
+    for name in executives:
+        cleaned_name = " ".join(word for word in name.split() if word not in executive_roles)
+        cleaned_executives.add(cleaned_name)
+
+    return cleaned_executives
+
+
+def extract_executive_dialogues(pdf_path, executive_names):
+    """Extracts only the text spoken by executives from a PDF file."""
+    doc = fitz.open(pdf_path)
+    executive_texts = {name: [] for name in executive_names}
+    capture = None  # Track the currently speaking executive
+    last_page_index = len(doc) - 1
+
+    for page_num, page in enumerate(doc):
+        if page_num == last_page_index:  # Ignore the last page
+            continue
+
+        blocks = page.get_text("text").split("\n")  # Extract text as lines
+
+        for line in blocks:
+            line = line.strip()
+            
+            # Identify speaker
+            for name in executive_names:
+                if re.match(rf"^{re.escape(name)}\s*:", line):  # Match "Executive Name:"
+                    capture = name
+                    text_spoken = line.split(":", 1)[-1].strip()  # Extract text after name
+                    if text_spoken:
+                        executive_texts[capture].append(text_spoken)
+                    break  # Stop checking once the correct executive is found
+
+            # Append text to the last detected executive
+            elif capture and line:
+                executive_texts[capture].append(line)
+
+    # Convert lists into concatenated strings
+    for name in executive_texts:
+        executive_texts[name] = " ".join(executive_texts[name])
+
+    return executive_texts
+
+
+def process_pdfs(pdf_folder, executive_roles, output_json):
+    """Processes all PDFs and extracts only executive dialogues."""
+    all_executive_data = {}
+
+    for pdf_file in os.listdir(pdf_folder):
+        if pdf_file.endswith(".pdf"):
+            pdf_path = os.path.join(pdf_folder, pdf_file)
+
+            # Extract executive names
+            executive_names = extract_executive_names(pdf_path, executive_roles)
+            if not executive_names:
+                continue  # Skip if no executives found
+
+            # Extract spoken text by executives only
+            executive_dialogues = extract_executive_dialogues(pdf_path, executive_names)
+
+            # Merge data across PDFs
+            for name, text in executive_dialogues.items():
+                if name in all_executive_data:
+                    all_executive_data[name] += " " + text
+                else:
+                    all_executive_data[name] = text
+
+    # Save as JSON
+    with open(output_json, "w", encoding="utf-8") as json_file:
+        json.dump(all_executive_data, json_file, indent=4, ensure_ascii=False)
+
+    print(f"Extraction completed! Data saved in {output_json}")
+
+
+# Example Usage
+pdf_folder_path = "path_to_your_pdf_directory"
+executive_roles_set = {"CEO", "CFO", "COO", "President", "Vice", "Manager"}  # Define roles to exclude from names
+output_json_path = "executive_speeches.json"
+
+process_pdfs(pdf_folder_path, executive_roles_set, output_json_path)
