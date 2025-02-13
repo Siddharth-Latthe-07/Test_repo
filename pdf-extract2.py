@@ -1451,3 +1451,195 @@ print(json_output)
 
 # Print path to saved JSON file
 print(f"JSON saved to: {output_file_path}")
+
+
+
+
+
+
+
+
+
+
+
+
+import fitz  # PyMuPDF
+import json
+import os
+import pandas as pd
+from collections import defaultdict
+
+# Initialize variables
+full_text = ""
+all_tables = []
+current_name = None
+current_briefing = []
+data = {}
+
+HEADER_HEIGHT = 50  # Adjust based on your document
+FOOTER_HEIGHT = 50  # Adjust based on your document
+
+input_folder = "input2/01-01-2023 to 28-02-2023"  # Folder containing multiple PDFs
+output_folder = "output"
+os.makedirs(output_folder, exist_ok=True)
+
+# Function to read roles from a text file
+def read_roles(file_path):
+    with open(file_path, "r") as file:
+        roles = [line.strip() for line in file]
+    return roles
+
+# Read roles from the 'roles.txt' file
+roles_file_path = "roles.txt"
+executive_roles = read_roles(roles_file_path)
+
+def add_to_data(current_name, current_briefing, new_name=None):
+    """Adds data to dictionary ensuring names are mapped to spoken text correctly."""
+    global data
+    if current_name and current_briefing:
+        if current_name in data:
+            data[current_name] += " ".join(current_briefing)
+        else:
+            data[current_name] = " ".join(current_briefing)
+    return new_name, []
+
+def extract_executive_names(pdf_path):
+    """Extracts executive names from the 'Call Participants' section, combining multi-line names."""
+    doc = fitz.open(pdf_path)
+    executives = []
+    
+    for page in doc:
+        text_blocks = page.get_text("dict")["blocks"]
+        capture = False  # Flag to start capturing executive names
+        previous_font = None
+        name_buffer = []
+
+        for block in text_blocks:
+            if "lines" not in block:
+                continue
+
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    text = span["text"].strip()
+
+                    # Start capturing names if "EXECUTIVES" is found
+                    if "EXECUTIVES" in text:
+                        capture = True
+                        continue
+
+                    if capture:
+                        font = span["font"]
+
+                        # If font is same as previous, append to name buffer
+                        if previous_font == font:
+                            name_buffer.append(text)
+                        else:
+                            if name_buffer:
+                                full_name = " ".join(name_buffer)
+                                if full_name.isupper():
+                                    executives.append(full_name)
+                            name_buffer = [text]  # Start new name group
+
+                        previous_font = font  # Store font for next iteration
+        
+        # Capture last name buffer
+        if name_buffer:
+            full_name = " ".join(name_buffer)
+            if full_name.isupper():
+                executives.append(full_name)
+
+    return set(executives)
+
+def process_page(page, page_num, current_name, current_briefing, doc_name):
+    """Processes a single page, extracting tables and spoken text."""
+    global data
+    blocks = page.get_text("dict")["blocks"]
+    table_bboxes = []
+
+    # Extract tables
+    tables = page.find_tables()
+    for table in tables:
+        is_highlighted = any(
+            fitz.Rect(table.bbox).intersects(fitz.Rect(annot.rect)) for annot in page.annots() if annot
+        )
+        if not is_highlighted:
+            all_tables.append({"document": doc_name, "page": page_num, "data": table.extract()})
+        table_bboxes.append(table.bbox)
+
+    # Extract text
+    for block in blocks:
+        block_bbox = fitz.Rect(block["bbox"])
+
+        # Ignore text inside tables
+        if any(block_bbox.intersects(fitz.Rect(bbox)) for bbox in table_bboxes) or block_bbox.y0 < HEADER_HEIGHT:
+            continue
+
+        if "lines" in block:
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    text = span["text"].strip()
+                    if text:
+                        is_bold = "Bold" in span["font"]
+
+                        if is_bold:  # Bold text
+                            current_name, current_briefing = add_to_data(current_name, current_briefing, text)
+                        else:
+                            current_briefing.append(text)
+
+    return current_name, current_briefing
+
+def process_pdfs(input_folder, output_folder):
+    """Processes all PDFs in the input folder and extracts relevant information."""
+    global current_name, current_briefing, data, all_tables
+    all_executive_data = []
+
+    for filename in os.listdir(input_folder):
+        if filename.endswith(".pdf"):
+            doc_path = os.path.join(input_folder, filename)
+            doc_name = os.path.splitext(filename)[0]
+
+            # Extract company name and publication date from the file name
+            parts = doc_name.split("_")
+            company_name = parts[0] if len(parts) > 0 else "Unknown"
+            pub_date = parts[2] if len(parts) > 2 else "Unknown"
+
+            doc = fitz.open(doc_path)
+            executive_names = extract_executive_names(doc_path)
+
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                current_name, current_briefing = process_page(page, page_num, current_name, current_briefing, doc_name)
+
+            # Finalize last extracted text
+            current_name, current_briefing = add_to_data(current_name, current_briefing)
+
+            # Filter data to keep only text spoken by the extracted executive names
+            filtered_data = {name: content for name, content in data.items() if name in executive_names}
+
+            formatted_data = [
+                {"executive": name, "briefing": content, "company_name": company_name, "pub_date": pub_date}
+                for name, content in filtered_data.items()
+            ]
+            all_executive_data.extend(formatted_data)
+
+            # Write the filtered data to a file
+            with open(os.path.join(output_folder, f"{doc_name}_executive_data.json"), "w") as f:
+                json.dump(formatted_data, f, indent=4)
+
+            # Reset variables for the next document
+            data = {}
+
+    return all_executive_data
+
+# Process PDFs in the input folder
+all_executive_data = process_pdfs(input_folder, output_folder)
+
+# Create a DataFrame from the extracted data
+df = pd.DataFrame(all_executive_data, columns=["executive", "briefing", "company_name", "pub_date"])
+
+# Write the DataFrame to an Excel file
+excel_output_path = os.path.join(output_folder, "all_executive_data.xlsx")
+df.to_excel(excel_output_path, index=False)
+
+print(f"Data saved successfully in {excel_output_path}")
+
