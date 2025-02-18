@@ -37,3 +37,45 @@ for sentiment in sentiments:
         plt.title(f"Word Cloud for Sentiment: {sentiment}")
         plt.show()
       
+
+
+
+
+from sqlalchemy import create_engine, Table, MetaData
+from datetime import datetime
+
+# Database connection
+DATABASE_URL = "oracle+cx_oracle://username:password@host:port/service_name"
+engine = create_engine(DATABASE_URL)
+
+# Reflect the existing table
+metadata = MetaData()
+metadata.reflect(bind=engine)
+
+# Reference the existing table
+executive_briefings = metadata.tables["executive_briefings"]  # Use actual table name
+
+# Insert data
+insert_data = [
+    {
+        "comp_name": "TechCorp", 
+        "pub_date": datetime.now().strftime("%Y-%m-%d"),  # Store date as string (VARCHAR2)
+        "executive_names": "John Doe", 
+        "briefings": "Company expansion plan discussion.",  # CLOB data
+        "inserted_by": "Admin"
+    },
+    {
+        "comp_name": "InnovateX", 
+        "pub_date": datetime.now().strftime("%Y-%m-%d"),  
+        "executive_names": "Jane Smith", 
+        "briefings": "AI-driven innovation strategies.", 
+        "inserted_by": "Admin"
+    },
+]
+
+# Execute insert
+with engine.connect() as connection:
+    connection.execute(executive_briefings.insert(), insert_data)
+    connection.commit()
+
+print("Data inserted successfully!")
